@@ -3,14 +3,12 @@ clear all;
 
 rng(123);
 
-%% parameters
+%.. parameters
 
 n_adapt_hmc_steps=1e6;   
-
 nu=@(x) exp(-0.5*x.^2)/sqrt(2*pi);
-force = @(x) -x;
 
-% prep
+%.. prep
 
 X0=2.0;
 tol=1/2.0;
@@ -18,6 +16,7 @@ tol=1/2.0;
 %tol=1/1024.0;
 x_vec=zeros(n_adapt_hmc_steps,1);
 ap_vec=zeros(n_adapt_hmc_steps,1);
+dt_vec=zeros(n_adapt_hmc_steps,1);
 tic
 for oi=1:n_adapt_hmc_steps
 
@@ -62,10 +61,8 @@ for oi=1:n_adapt_hmc_steps
     X1=Bernoulli*X1star+(1-Bernoulli)*X0star;  %  actual next state
 
     ap_vec(oi)=alpha;
-
     x_vec(oi)=X1;
     dt_vec(oi)=dt;
-    mean_dt_vec(oi)=1/lambf;
     X0=X1;
 end
 toc
@@ -79,7 +76,8 @@ exact_im=nu(xout);
 aHMC_em=aHMC_em/sum(aHMC_em(:));
 exact_im=exact_im/sum(exact_im(:));
 
-figure(5); hold on;
+figure(5); 
+hold on;
 plot(xout,aHMC_em,'k','LineWidth',2);
 plot(xout,exact_im,'k','LineWidth',2,'color',[0.75 0.75 0.75]);
 %set(gca,'XTick',[0.25 0.5 0.75],'FontSize',16);
@@ -90,6 +88,4 @@ box on;
 grid on;
 set(gcf,'color',[1.0,1.0,1.0]);
 legend({'empirical', 'exact'}, 'location', 'northeast', 'Interpreter','latex', 'fontsize',20, 'Orientation','vertical');
-return
-filename=['autoGHMC_asymp_bias_tau_' hstr '.pdf'];
-export_fig(gcf,filename,'-pdf');
+
