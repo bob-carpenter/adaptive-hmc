@@ -32,8 +32,8 @@ for oi=1:n_adapt_hmc_steps
 
     %.. compute lambf 
 
-    if (V0star^2-2*tol>0)
-        HH=min(1.9,sqrt(8*tol/(V0star^2-2*tol)));
+    if (H0star-tol>0)
+        HH=sqrt(4*tol/(H0star-tol));
     else
         HH=1.9;
     end
@@ -49,8 +49,8 @@ for oi=1:n_adapt_hmc_steps
 
     %.. compute lambb 
  
-    if (V1star^2-2*tol>0)
-        HH=min(1.9,sqrt(8*tol/(V1star^2-2*tol)));
+    if (H1star-tol>0)
+        HH=sqrt(4*tol/(H1star-tol));
     else
         HH=1.9;
     end
