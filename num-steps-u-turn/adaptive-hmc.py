@@ -124,11 +124,12 @@ import plotnine as pn
 import pandas as pd
 import scipy as sp
 df = pd.DataFrame({'x': sample[1:M, 1] })
-print(df)
 
 plot = ( pn.ggplot(df, pn.aes(x = 'x'))
-         + pn.geom_histogram(pn.aes(y='..density..'), color='black', fill = 'white', alpha=0.3)
-         + pn.stat_function(fun=sp.stats.norm.pdf, args={'loc': 0, 'scale': 1},
+         + pn.geom_histogram(pn.aes(y='..density..'),
+                             color='black', fill = 'white')
+         + pn.stat_function(fun=sp.stats.norm.pdf,
+                            args={'loc': 0, 'scale': 1},
                             color='red', size=1)
        )
 print(plot)
