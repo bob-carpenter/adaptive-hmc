@@ -9,6 +9,8 @@ class AdaptiveHmcSampler:
         self._rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
         self._theta = theta0 if theta0 is not None else rng.normal(size=model.dims())
         self._rho = rho0 if rho0 is not None else rng.normal(size=model.dims())
+        self._proposed = 0
+        self._accepted = 0
         
     def __iter__(self):
         return self
@@ -46,8 +48,10 @@ class AdaptiveHmcSampler:
 
         logp_prop = self.joint_logp(theta_prop, rho_prop)
         logp_tune_prop = self.logp_tune(theta_prop, rho_prop)
-        
+
+        self._proposed += 1
         if np.log(rng.uniform()) < (logp_prop - logp) + (logp_tune - logp_tune_prop):
+            self._accepted += 1
             self._theta = theta_prop
             self._rho = rho_prop
         return self._theta, self._rho
@@ -57,13 +61,12 @@ class AdaptiveHmcSampler:
         thetas[0, :] = self._theta
         for m in range(1, M):
             thetas[m, :], _ = self.draw()
-        return thetas    
-        
+        return thetas
 
 class UTurnSampler(AdaptiveHmcSampler):
     def __init__(self, model, stepsize = 0.5, numsteps = 4, seed = None, theta0 = None, rho0 = None):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
-
+        
     def uturn(self, theta, rho):
         theta_next = theta.copy()
         rho_next = rho.copy()
@@ -103,16 +106,29 @@ class StdNormal:
     def dims(self):
         return self._dims
 
-M = 5000
+M = 10000
 theta0 = np.array([0.2, -1.3, -0.1, -3.9, 4.8])
 rng = np.random.default_rng()
 stepsize = 0.9
-L = 5
+L = 10
 model = StdNormal(5)
-sampler =UTurnSampler(model, stepsize)
+sampler = UTurnSampler(model, stepsize)
 sample = sampler.sample(M)
 
-print(f"   mean: {np.mean(sample, axis=0)=}")
-print(f"std dev: {np.std(sample, axis=0, ddof=1)=}")
+np.set_printoptions(precision=3)
+print(f"   mean: {np.mean(sample, axis=0)}")
+print(f"std dev: {np.std(sample, axis=0, ddof=1)}")
+print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
 
+import plotnine as pn
+import pandas as pd
+import scipy as sp
+df = pd.DataFrame({'x': sample[1:M, 1] })
+print(df)
 
+plot = ( pn.ggplot(df, pn.aes(x = 'x'))
+         + pn.geom_histogram(pn.aes(y='..density..'), color='black', fill = 'white', alpha=0.3)
+         + pn.stat_function(fun=sp.stats.norm.pdf, args={'loc': 0, 'scale': 1},
+                            color='red', size=1)
+       )
+print(plot)

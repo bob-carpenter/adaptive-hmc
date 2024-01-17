@@ -65,9 +65,9 @@ class StdNormal:
     def dims(self):
         return 1
 
-M = 100
+M = 1000
 theta0 = np.array([0.2])
-rng = np.random.default_rng(seed = 123465)
+rng = np.random.default_rng()
 stepsize = 0.99
 L = 15
 model = StdNormal()
