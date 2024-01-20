@@ -39,7 +39,8 @@ def stop_criteria(theta, rho, stepsize, model, H0):
         v = dGdt(theta_next, rho_next)
         H = joint_logp(theta_next, rho_next, model)
         p = np.exp(H0 - H)
-        px.append(p)
+        # px.append(p)
+        px.append(np.sum((theta - theta_next) ** 2))
         P += p
         e += (v * p / P - e) / M
         if np.abs(e) < delta:
