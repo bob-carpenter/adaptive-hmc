@@ -23,15 +23,15 @@ class AdaptiveHmcSampler:
 
     def leapfrog_step(self, theta, rho):
         _, grad = self._model.log_density_gradient(theta)
-        rho += 0.5 * self._stepsize * grad
-        theta += self._stepsize * rho
-        _, grad = self._model.log_density_gradient(theta)
-        rho += 0.5 * self._stepsize * grad
-        return theta, rho
+        rho2 = rho + 0.5 * self._stepsize * grad
+        theta2 = theta + self._stepsize * rho2
+        _, grad = self._model.log_density_gradient(theta2)
+        rho2 += 0.5 * self._stepsize * grad
+        return theta2, rho2
 
     def leapfrog(self):
-        theta = self._theta.copy()
-        rho = self._rho.copy()
+        theta = self._theta
+        rho = self._rho
         for _ in range(self._numsteps):
             theta, rho = self.leapfrog_step(theta, rho)
         return theta, rho
@@ -40,7 +40,7 @@ class AdaptiveHmcSampler:
         self._rho = rng.normal(size = self._model.dims())
         logp = self.joint_logp(self._theta, self._rho)
 
-        self._numsteps, self._stepsize = self.sample_tuning()
+        self.sample_tuning()
         logp_tune = self.logp_tune(self._theta, self._rho)
 
         theta_prop, rho_prop = self.leapfrog()
@@ -66,10 +66,11 @@ class AdaptiveHmcSampler:
 class UTurnSampler(AdaptiveHmcSampler):
     def __init__(self, model, stepsize = 0.5, numsteps = 4, seed = None, theta0 = None, rho0 = None):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
+        self._gradient_calls = 0
         
     def uturn(self, theta, rho):
-        theta_next = theta.copy()
-        rho_next = rho.copy()
+        theta_next = theta
+        rho_next = rho
         last_dist_sq = 0
         L = 0
         while True:
@@ -85,8 +86,7 @@ class UTurnSampler(AdaptiveHmcSampler):
         theta = self._theta
         rho = self._rho
         N = self.uturn(theta, rho)
-        numsteps = rng.integers(1, N + 1)
-        return numsteps, self._stepsize
+        self._numsteps = rng.integers(1, N + 1)
 
     def logp_tune(self, theta, rho):
         N = self.uturn(theta, rho)
@@ -106,7 +106,7 @@ class StdNormal:
     def dims(self):
         return self._dims
 
-M = 10000
+M = 100_000
 theta0 = np.array([0.2, -1.3, -0.1, -3.9, 4.8])
 rng = np.random.default_rng()
 stepsize = 0.9
@@ -118,6 +118,8 @@ sample = sampler.sample(M)
 np.set_printoptions(precision=3)
 print(f"   mean: {np.mean(sample, axis=0)}")
 print(f"std dev: {np.std(sample, axis=0, ddof=1)}")
+print(f"   mean (sq): {np.mean(sample**2, axis=0)}")
+print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}")
 print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
 
 import plotnine as pn
@@ -126,10 +128,10 @@ import scipy as sp
 df = pd.DataFrame({'x': sample[1:M, 1] })
 
 plot = ( pn.ggplot(df, pn.aes(x = 'x'))
-         + pn.geom_histogram(pn.aes(y='..density..'),
+         + pn.geom_histogram(pn.aes(y='..density..'), bins=50,
                              color='black', fill = 'white')
          + pn.stat_function(fun=sp.stats.norm.pdf,
                             args={'loc': 0, 'scale': 1},
                             color='red', size=1)
        )
-print(plot)
+# print(plot)
