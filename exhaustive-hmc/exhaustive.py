@@ -19,8 +19,9 @@ def leapfrog(theta, rho, stepsize, L, model):
         theta, rho = leapfrog_step(theta, rho, stepsize, model)
     return theta, rho
 
-def dGdt(theta, rho):
-    return rho.dot(rho) - theta.dot(theta)
+def dGdt(theta, rho, model):
+    _, grad = model.log_density_gradient(theta)
+    return rho.dot(rho) + grad.dot(theta)
 
 def stop_criteria(theta, rho, stepsize, model, H0):
     theta_next = theta.copy()
@@ -36,7 +37,7 @@ def stop_criteria(theta, rho, stepsize, model, H0):
     while True:
         M += 1
         theta_next, rho_next = leapfrog_step(theta_next, rho_next, stepsize, model)
-        v = dGdt(theta_next, rho_next)
+        v = dGdt(theta_next, rho_next, model)
         H = joint_logp(theta_next, rho_next, model)
         p = np.exp(H0 - H)
         # px.append(p)
