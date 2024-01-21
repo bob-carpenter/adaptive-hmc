@@ -85,14 +85,17 @@ class UTurnSampler(AdaptiveHmcSampler):
 
             
     def uturn_to_steps(self, N):
-        return N
+        return N + 1
             
     def sample_tuning(self):
         N = self.uturn(self._theta, self._rho)
         # exclude start, include U-turn
         self._numsteps = rng.integers(1, self.uturn_to_steps(N))
         # careful impl would share these steps forward/reverse
-        self._gradient_calls += self._numsteps - N
+        if self._numsteps <= N:
+            self._gradient_calls -= self._numsteps # adjustment for overlap
+        else:
+            self._gradient_calls += self._numsteps # reverse will be contained
         self._leapfrog_steps += self._numsteps
 
     def logp_tune(self, theta, rho):
@@ -100,9 +103,10 @@ class UTurnSampler(AdaptiveHmcSampler):
         if self._numsteps > self.uturn_to_steps(N):
             return np.log(0)
         # called once forward, once reverse
-        self._gradient_calls += N
-        # log uniform(self._numsteps | 1, N - 1) = log(1 / (N - 1))
-        return -np.log(self.uturn_to_steps(N))
+        if self._numsteps <= N:                    # add forward and reverse
+            self._gradient_calls += N
+        # log uniform(self._numsteps | 1, uturn_to-steps(N) - 1)
+        return -np.log(self.uturn_to_steps(N) - 1)
 
         
 class StdNormal:
@@ -118,29 +122,6 @@ class StdNormal:
     def dims(self):
         return self._dims
 
-M = 1000
-theta0 = np.array([0.2, -1.3, -0.1, -3.9, 4.8])
-rng = np.random.default_rng()
-stepsize = 0.9
-L = 10
-
-D = 5
-model = StdNormal(D)
-sampler = UTurnSampler(model, stepsize)
-sample = sampler.sample(M)
-
-np.set_printoptions(precision=3)
-print(f"   gradient calls: {sampler._gradient_calls}")
-print(f"gradient calls/it: {sampler._gradient_calls / M:6.2f}\n")
-
-print(f"   leapfrog steps: {sampler._leapfrog_steps}")
-print(f"leapfrog steps/it: {sampler._leapfrog_steps / M:6.2f}\n")
-
-print(f"   mean: {np.mean(sample, axis=0)}")
-print(f"std dev: {np.std(sample, axis=0, ddof=1)}\n")
-
-print(f"   mean (sq): {np.mean(sample**2, axis=0)}")
-print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}\n")
 
 def mean_sq_jump_distance(sample):
     sq_jump = np.empty(M - 1, np.float64)
@@ -150,23 +131,62 @@ def mean_sq_jump_distance(sample):
     return np.mean(sq_jump)
 
 
-print(f"mean squared jump distance = {mean_sq_jump_distance(sample):6.2f}")
+M = 100 * 100  # expected std err = 1 / sqrt(M)
+stepsize = 0.5
+D = 5
+N = 50
 
-iid_sample = np.random.normal(size = (M, D))
-print(f"ind. sample mean sq. jump distance = {mean_sq_jump_distance(iid_sample):6.2f}")
+print(f"STEP SIZE: {stepsize:4.2f}  {D = }  {N = }")
 
-print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
+msq_jumps = np.empty(N)
+msq_jumps_iid = np.empty(N)
+accept_probs = np.empty(N)
+for n in range(N):
+    rng = np.random.default_rng()
+    theta0 = np.random.normal(size=5)
+    model = StdNormal(D)
+    sampler = UTurnSampler(model, stepsize)
+    sample = sampler.sample(M)
+    msq_jumps[n] = mean_sq_jump_distance(sample)
+    iid_sample = np.random.normal(size = (M, D))
+    msq_jumps_iid[n] = mean_sq_jump_distance(iid_sample)
+    accept_probs[n] = sampler._accepted / sampler._proposed
+    if False:
+        np.set_printoptions(precision=3)
+        print(f"   gradient calls: {sampler._gradient_calls}")
+        print(f"gradient calls/it: {sampler._gradient_calls / M:6.2f}\n")
 
-import plotnine as pn
-import pandas as pd
-import scipy as sp
-df = pd.DataFrame({'x': sample[1:M, 1] })
+        print(f"   leapfrog steps: {sampler._leapfrog_steps}")
+        print(f"leapfrog steps/it: {sampler._leapfrog_steps / M:6.2f}\n")
 
-plot = ( pn.ggplot(df, pn.aes(x = 'x'))
-         + pn.geom_histogram(pn.aes(y='..density..'), bins=50,
-                             color='black', fill = 'white')
-         + pn.stat_function(fun=sp.stats.norm.pdf,
-                            args={'loc': 0, 'scale': 1},
-                            color='red', size=1)
-       )
-# print(plot)
+        print(f"   mean: {np.mean(sample, axis=0)}")
+        print(f"std dev: {np.std(sample, axis=0, ddof=1)}\n")
+
+        print(f"   mean (sq): {np.mean(sample**2, axis=0)}")
+        print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}\n")
+
+        print(f"mean squared jump distance = {mean_sq_jump_distance(sample):6.2f}")
+
+        print(f"ind. sample mean sq. jump distance = {mean_sq_jump_distance(iid_sample):6.2f}")
+
+        print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
+
+print(f"mean msq jump iid: {np.mean(msq_jumps_iid):5.1f}  std-dev msq jump iid: {np.std(msq_jumps_iid):4.2f}")
+print(f"    mean msq jump: {np.mean(msq_jumps):5.1f}  std-dev msq jump: {np.std(msq_jumps):4.2f}")
+print(f"      accept prob: {np.mean(accept_probs):4.2f}  std-dev accept prob: {np.std(accept_probs):4.2f}")        
+
+if False:        
+    import plotnine as pn
+    import pandas as pd
+    import scipy as sp
+    df = pd.DataFrame({'x': sample[1:M, 1] })
+
+    plot = (
+        pn.ggplot(df, pn.aes(x = 'x'))
+        + pn.geom_histogram(pn.aes(y='..density..'), bins=50,
+                 	            color='black', fill = 'white')
+        + pn.stat_function(fun=sp.stats.norm.pdf,
+                               args={'loc': 0, 'scale': 1},
+                               color='red', size=1)
+    )
+    print(plot)
