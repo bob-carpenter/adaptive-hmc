@@ -50,7 +50,7 @@ class AdaptiveHmcSampler:
         logp_tune_prop = self.logp_tune(theta_prop, rho_prop)
 
         self._proposed += 1
-        if np.log(rng.uniform()) < (logp_prop - logp) + (logp_tune - logp_tune_prop):
+        if np.log(rng.uniform()) < (logp_prop - logp) + (logp_tune_prop - logp_tune):
             self._accepted += 1
             self._theta = theta_prop
             self._rho = rho_prop
@@ -67,6 +67,7 @@ class UTurnSampler(AdaptiveHmcSampler):
     def __init__(self, model, stepsize = 0.5, numsteps = 4, seed = None, theta0 = None, rho0 = None):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
         self._gradient_calls = 0
+        self._leapfrog_steps = 0
         
     def uturn(self, theta, rho):
         theta_next = theta
@@ -79,18 +80,29 @@ class UTurnSampler(AdaptiveHmcSampler):
             diff = theta_next - theta
             dist_sq = np.sum(diff**2)
             if dist_sq <= last_dist_sq:
-                return L
+                return L  # L >= 2 because 1 step can't u-turn
             last_dist_sq = dist_sq
 
+            
+    def uturn_to_steps(self, N):
+        return N
+            
     def sample_tuning(self):
-        theta = self._theta
-        rho = self._rho
-        N = self.uturn(theta, rho)
-        self._numsteps = rng.integers(1, N + 1)
+        N = self.uturn(self._theta, self._rho)
+        # exclude start, include U-turn
+        self._numsteps = rng.integers(1, self.uturn_to_steps(N))
+        # careful impl would share these steps forward/reverse
+        self._gradient_calls += self._numsteps - N
+        self._leapfrog_steps += self._numsteps
 
     def logp_tune(self, theta, rho):
         N = self.uturn(theta, rho)
-        return np.log(N)
+        if self._numsteps > self.uturn_to_steps(N):
+            return np.log(0)
+        # called once forward, once reverse
+        self._gradient_calls += N
+        # log uniform(self._numsteps | 1, N - 1) = log(1 / (N - 1))
+        return -np.log(self.uturn_to_steps(N))
 
         
 class StdNormal:
@@ -106,20 +118,43 @@ class StdNormal:
     def dims(self):
         return self._dims
 
-M = 100_000
+M = 1000
 theta0 = np.array([0.2, -1.3, -0.1, -3.9, 4.8])
 rng = np.random.default_rng()
 stepsize = 0.9
 L = 10
-model = StdNormal(5)
+
+D = 5
+model = StdNormal(D)
 sampler = UTurnSampler(model, stepsize)
 sample = sampler.sample(M)
 
 np.set_printoptions(precision=3)
+print(f"   gradient calls: {sampler._gradient_calls}")
+print(f"gradient calls/it: {sampler._gradient_calls / M:6.2f}\n")
+
+print(f"   leapfrog steps: {sampler._leapfrog_steps}")
+print(f"leapfrog steps/it: {sampler._leapfrog_steps / M:6.2f}\n")
+
 print(f"   mean: {np.mean(sample, axis=0)}")
-print(f"std dev: {np.std(sample, axis=0, ddof=1)}")
+print(f"std dev: {np.std(sample, axis=0, ddof=1)}\n")
+
 print(f"   mean (sq): {np.mean(sample**2, axis=0)}")
-print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}")
+print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}\n")
+
+def mean_sq_jump_distance(sample):
+    sq_jump = np.empty(M - 1, np.float64)
+    for m in range(M - 1):
+        jump = sample[m + 1, :] - sample[m, :]
+        sq_jump[m] = jump.dot(jump)
+    return np.mean(sq_jump)
+
+
+print(f"mean squared jump distance = {mean_sq_jump_distance(sample):6.2f}")
+
+iid_sample = np.random.normal(size = (M, D))
+print(f"ind. sample mean sq. jump distance = {mean_sq_jump_distance(iid_sample):6.2f}")
+
 print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
 
 import plotnine as pn
