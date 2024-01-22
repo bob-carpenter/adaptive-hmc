@@ -1,5 +1,6 @@
-import numpy as np
 
+import numpy as np
+import scipy as sp
 
 class AdaptiveHmcSampler:
     def __init__(self, model, stepsize, numsteps, seed, theta0, rho0):
@@ -63,6 +64,38 @@ class AdaptiveHmcSampler:
             thetas[m, :], _ = self.draw()
         return thetas
 
+class StableSampler(AdaptiveHmcSampler):
+    def __init__(self, model, tolerance, integration_time, stepsize, numsteps, seed, theta0, rho0):
+        super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
+        self._max_stepsize = stepsize
+        self._tolerance = tolerance
+
+    def expected_steps(self):
+        numsteps_save = self._numsteps
+        self._numsteps = 2
+        H_0 = self.logp(self._theta, self._rho)
+        while True:
+            self._stepsize = self._max_stepsize / self._numsteps
+            theta_star, rho_star = self.leapfrog()
+            H_star = self.logp_joint(theta_star, rho_star)
+            if np.abs(H_0 - H_star) < self._tolerance:
+               break 
+            self._numsteps += 1
+        num_steps_out = self._numsteps
+        self._numsteps = numsteps_save  # horrible abuse of OO member as local var
+        return num_steps_out
+        
+    def sample_tuning(self):
+        N = self.expected_steps(self._theta, self._rho)
+        self._numsteps = np.random.poisson(N)
+        self._stepsize = self._max_stepsize / self._numsteps
+
+    def logp_tune(self, theta, rho):
+        N = self.expected_steps(theta, rho)
+        return sp.stats.poisson.logpmf(self._numsteps, N)
+        
+        
+            
 class UTurnSampler(AdaptiveHmcSampler):
     def __init__(self, model, stepsize = 0.5, numsteps = 4, seed = None, theta0 = None, rho0 = None):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
@@ -85,12 +118,17 @@ class UTurnSampler(AdaptiveHmcSampler):
 
             
     def uturn_to_steps(self, N):
-        return N + 1
+        return N * 3 // 2 + 1
             
     def sample_tuning(self):
         N = self.uturn(self._theta, self._rho)
         # exclude start, include U-turn
-        self._numsteps = rng.integers(1, self.uturn_to_steps(N))
+        steps = self.uturn_to_steps(N)
+        self._numsteps = rng.integers(1, steps)
+        # (WEIGHT) p = np.arange(1, steps + 1)
+        # (WEIGHT) p = p / np.sum(p)
+        # (WEIGHT) self._numsteps = np.random.choice(a = np.arange(1, steps + 1), p = p)
+        
         # careful impl would share these steps forward/reverse
         if self._numsteps <= N:
             self._gradient_calls -= self._numsteps # adjustment for overlap
@@ -105,6 +143,10 @@ class UTurnSampler(AdaptiveHmcSampler):
         # called once forward, once reverse
         if self._numsteps <= N:                    # add forward and reverse
             self._gradient_calls += N
+        steps = self.uturn_to_steps(N)
+        # (WEIGHT) p = np.arange(1, steps + 1)
+        # (WEIGHT) p = p / np.sum(p)
+        # (WEIGHT) return np.log(p[self._numsteps - 1])
         # log uniform(self._numsteps | 1, uturn_to-steps(N) - 1)
         return -np.log(self.uturn_to_steps(N) - 1)
 
@@ -128,19 +170,21 @@ def mean_sq_jump_distance(sample):
     for m in range(M - 1):
         jump = sample[m + 1, :] - sample[m, :]
         sq_jump[m] = jump.dot(jump)
-    return np.mean(sq_jump)
+        return np.mean(sq_jump)
 
 
 M = 100 * 100  # expected std err = 1 / sqrt(M)
-stepsize = 0.5
+stepsize = 0.9
 D = 5
-N = 50
+N = 100
 
 print(f"STEP SIZE: {stepsize:4.2f}  {D = }  {N = }")
 
 msq_jumps = np.empty(N)
 msq_jumps_iid = np.empty(N)
 accept_probs = np.empty(N)
+sq_err_X = np.empty((N, D))
+sq_err_Xsq = np.empty((N, D))
 for n in range(N):
     rng = np.random.default_rng()
     theta0 = np.random.normal(size=5)
@@ -151,6 +195,8 @@ for n in range(N):
     iid_sample = np.random.normal(size = (M, D))
     msq_jumps_iid[n] = mean_sq_jump_distance(iid_sample)
     accept_probs[n] = sampler._accepted / sampler._proposed
+    sq_err_X[n, :] = np.mean(sample, axis=0)**2
+    sq_err_Xsq[n, :] = (np.mean(sample**2, axis=0) - 1)**2
     if False:
         np.set_printoptions(precision=3)
         print(f"   gradient calls: {sampler._gradient_calls}")
@@ -161,7 +207,7 @@ for n in range(N):
 
         print(f"   mean: {np.mean(sample, axis=0)}")
         print(f"std dev: {np.std(sample, axis=0, ddof=1)}\n")
-
+        
         print(f"   mean (sq): {np.mean(sample**2, axis=0)}")
         print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}\n")
 
@@ -171,6 +217,8 @@ for n in range(N):
 
         print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
 
+print(f"X std err: {np.sqrt(sq_err_X.reshape(N * D).sum() / (N * D))}")        
+print(f"X**2 std err: {np.sqrt(sq_err_Xsq.reshape(N * D).sum() / (N * D))}")        
 print(f"mean msq jump iid: {np.mean(msq_jumps_iid):5.1f}  std-dev msq jump iid: {np.std(msq_jumps_iid):4.2f}")
 print(f"    mean msq jump: {np.mean(msq_jumps):5.1f}  std-dev msq jump: {np.std(msq_jumps):4.2f}")
 print(f"      accept prob: {np.mean(accept_probs):4.2f}  std-dev accept prob: {np.std(accept_probs):4.2f}")        
