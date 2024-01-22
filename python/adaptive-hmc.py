@@ -1,4 +1,3 @@
-
 import numpy as np
 import scipy as sp
 
@@ -7,12 +6,14 @@ class AdaptiveHmcSampler:
         self._model = model
         self._stepsize = stepsize
         self._numsteps = numsteps
-        self._rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
+        self._rng = (
+            np.random.default_rng(seed) if seed is not None else np.random.default_rng()
+        )
         self._theta = theta0 if theta0 is not None else rng.normal(size=model.dims())
         self._rho = rho0 if rho0 is not None else rng.normal(size=model.dims())
         self._proposed = 0
         self._accepted = 0
-        
+
     def __iter__(self):
         return self
 
@@ -38,7 +39,7 @@ class AdaptiveHmcSampler:
         return theta, rho
 
     def draw(self):
-        self._rho = rng.normal(size = self._model.dims())
+        self._rho = rng.normal(size=self._model.dims())
         logp = self.joint_logp(self._theta, self._rho)
 
         self.sample_tuning()
@@ -56,7 +57,7 @@ class AdaptiveHmcSampler:
             self._theta = theta_prop
             self._rho = rho_prop
         return self._theta, self._rho
-    
+
     def sample(self, M):
         thetas = np.empty((M, model.dims()), dtype=np.float64)
         thetas[0, :] = self._theta
@@ -64,8 +65,11 @@ class AdaptiveHmcSampler:
             thetas[m, :], _ = self.draw()
         return thetas
 
+
 class StableSampler(AdaptiveHmcSampler):
-    def __init__(self, model, tolerance, integration_time, stepsize, numsteps, seed, theta0, rho0):
+    def __init__(
+        self, model, tolerance, integration_time, stepsize, numsteps, seed, theta0, rho0
+    ):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
         self._max_stepsize = stepsize
         self._tolerance = tolerance
@@ -79,12 +83,12 @@ class StableSampler(AdaptiveHmcSampler):
             theta_star, rho_star = self.leapfrog()
             H_star = self.logp_joint(theta_star, rho_star)
             if np.abs(H_0 - H_star) < self._tolerance:
-               break 
+                break
             self._numsteps += 1
         num_steps_out = self._numsteps
         self._numsteps = numsteps_save  # horrible abuse of OO member as local var
         return num_steps_out
-        
+
     def sample_tuning(self):
         N = self.expected_steps(self._theta, self._rho)
         self._numsteps = np.random.poisson(N)
@@ -93,15 +97,16 @@ class StableSampler(AdaptiveHmcSampler):
     def logp_tune(self, theta, rho):
         N = self.expected_steps(theta, rho)
         return sp.stats.poisson.logpmf(self._numsteps, N)
-        
-        
-            
+
+
 class UTurnSampler(AdaptiveHmcSampler):
-    def __init__(self, model, stepsize = 0.5, numsteps = 4, seed = None, theta0 = None, rho0 = None):
+    def __init__(
+        self, model, stepsize=0.5, numsteps=4, seed=None, theta0=None, rho0=None
+    ):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
         self._gradient_calls = 0
         self._leapfrog_steps = 0
-        
+
     def uturn(self, theta, rho):
         theta_next = theta
         rho_next = rho
@@ -116,10 +121,9 @@ class UTurnSampler(AdaptiveHmcSampler):
                 return L  # L >= 2 because 1 step can't u-turn
             last_dist_sq = dist_sq
 
-            
     def uturn_to_steps(self, N):
         return N * 3 // 2 + 1
-            
+
     def sample_tuning(self):
         N = self.uturn(self._theta, self._rho)
         # exclude start, include U-turn
@@ -128,12 +132,12 @@ class UTurnSampler(AdaptiveHmcSampler):
         # (WEIGHT) p = np.arange(1, steps + 1)
         # (WEIGHT) p = p / np.sum(p)
         # (WEIGHT) self._numsteps = np.random.choice(a = np.arange(1, steps + 1), p = p)
-        
+
         # careful impl would share these steps forward/reverse
         if self._numsteps <= N:
-            self._gradient_calls -= self._numsteps # adjustment for overlap
+            self._gradient_calls -= self._numsteps  # adjustment for overlap
         else:
-            self._gradient_calls += self._numsteps # reverse will be contained
+            self._gradient_calls += self._numsteps  # reverse will be contained
         self._leapfrog_steps += self._numsteps
 
     def logp_tune(self, theta, rho):
@@ -141,7 +145,7 @@ class UTurnSampler(AdaptiveHmcSampler):
         if self._numsteps > self.uturn_to_steps(N):
             return np.log(0)
         # called once forward, once reverse
-        if self._numsteps <= N:                    # add forward and reverse
+        if self._numsteps <= N:  # add forward and reverse
             self._gradient_calls += N
         steps = self.uturn_to_steps(N)
         # (WEIGHT) p = np.arange(1, steps + 1)
@@ -150,9 +154,9 @@ class UTurnSampler(AdaptiveHmcSampler):
         # log uniform(self._numsteps | 1, uturn_to-steps(N) - 1)
         return -np.log(self.uturn_to_steps(N) - 1)
 
-        
+
 class StdNormal:
-    def __init__(self, dims = 1):
+    def __init__(self, dims=1):
         self._dims = dims
 
     def log_density(self, x):
@@ -176,7 +180,7 @@ def mean_sq_jump_distance(sample):
 M = 100 * 100  # expected std err = 1 / sqrt(M)
 stepsize = 0.9
 D = 5
-N = 100
+N = 1_000
 
 print(f"STEP SIZE: {stepsize:4.2f}  {D = }  {N = }")
 
@@ -192,11 +196,10 @@ for n in range(N):
     sampler = UTurnSampler(model, stepsize)
     sample = sampler.sample(M)
     msq_jumps[n] = mean_sq_jump_distance(sample)
-    iid_sample = np.random.normal(size = (M, D))
     msq_jumps_iid[n] = mean_sq_jump_distance(iid_sample)
     accept_probs[n] = sampler._accepted / sampler._proposed
-    sq_err_X[n, :] = np.mean(sample, axis=0)**2
-    sq_err_Xsq[n, :] = (np.mean(sample**2, axis=0) - 1)**2
+    sq_err_X[n, :] = np.mean(sample, axis=0) ** 2
+    sq_err_Xsq[n, :] = (np.mean(sample**2, axis=0) - 1) ** 2
     if False:
         np.set_printoptions(precision=3)
         print(f"   gradient calls: {sampler._gradient_calls}")
@@ -207,34 +210,44 @@ for n in range(N):
 
         print(f"   mean: {np.mean(sample, axis=0)}")
         print(f"std dev: {np.std(sample, axis=0, ddof=1)}\n")
-        
+
         print(f"   mean (sq): {np.mean(sample**2, axis=0)}")
         print(f"std dev (sq): {np.std(sample**2, axis=0, ddof=1)}\n")
 
         print(f"mean squared jump distance = {mean_sq_jump_distance(sample):6.2f}")
 
-        print(f"ind. sample mean sq. jump distance = {mean_sq_jump_distance(iid_sample):6.2f}")
+        print(
+            f"ind. sample mean sq. jump distance = {mean_sq_jump_distance(iid_sample):6.2f}"
+        )
 
         print(f" accept: {sampler._accepted / sampler._proposed:4.2f}")
 
-print(f"X std err: {np.sqrt(sq_err_X.reshape(N * D).sum() / (N * D))}")        
-print(f"X**2 std err: {np.sqrt(sq_err_Xsq.reshape(N * D).sum() / (N * D))}")        
-print(f"mean msq jump iid: {np.mean(msq_jumps_iid):5.1f}  std-dev msq jump iid: {np.std(msq_jumps_iid):4.2f}")
-print(f"    mean msq jump: {np.mean(msq_jumps):5.1f}  std-dev msq jump: {np.std(msq_jumps):4.2f}")
-print(f"      accept prob: {np.mean(accept_probs):4.2f}  std-dev accept prob: {np.std(accept_probs):4.2f}")        
+print(f"X std err: {np.sqrt(sq_err_X.reshape(N * D).sum() / (N * D))}")
+print(f"X**2 std err: {np.sqrt(sq_err_Xsq.reshape(N * D).sum() / (N * D))}")
+print(
+    f"mean msq jump iid: {np.mean(msq_jumps_iid):5.1f}  std-dev msq jump iid: {np.std(msq_jumps_iid):4.2f}"
+)
+print(
+    f"    mean msq jump: {np.mean(msq_jumps):5.1f}  std-dev msq jump: {np.std(msq_jumps):4.2f}"
+)
+print(
+    f"      accept prob: {np.mean(accept_probs):4.2f}  std-dev accept prob: {np.std(accept_probs):4.2f}"
+)
 
-if False:        
+if False:
     import plotnine as pn
     import pandas as pd
     import scipy as sp
-    df = pd.DataFrame({'x': sample[1:M, 1] })
+
+    df = pd.DataFrame({"x": sample[1:M, 1]})
 
     plot = (
-        pn.ggplot(df, pn.aes(x = 'x'))
-        + pn.geom_histogram(pn.aes(y='..density..'), bins=50,
-                 	            color='black', fill = 'white')
-        + pn.stat_function(fun=sp.stats.norm.pdf,
-                               args={'loc': 0, 'scale': 1},
-                               color='red', size=1)
+        pn.ggplot(df, pn.aes(x="x"))
+        + pn.geom_histogram(
+            pn.aes(y="..density.."), bins=50, color="black", fill="white"
+        )
+        + pn.stat_function(
+            fun=sp.stats.norm.pdf, args={"loc": 0, "scale": 1}, color="red", size=1
+        )
     )
     print(plot)
