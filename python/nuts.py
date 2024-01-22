@@ -10,9 +10,9 @@ csp.utils.get_logger().setLevel(logging.ERROR)
 
 model = csp.CmdStanModel(stan_file = "../stan/normal.stan")
 
-D = 5
-N = 1000
-M = 10_000
+D = 5        # dimensions
+N = 1000     # runs
+M = 10_000   # draws/run
 
 # IID
 msq_jumps = np.empty(N)
