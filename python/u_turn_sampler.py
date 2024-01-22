@@ -4,7 +4,7 @@ import scipy as sp
 
 class UTurnSampler(ahmc.AdaptiveHmcSampler):
     def __init__(
-        self, model, stepsize=0.5, numsteps=4, seed=None, theta0=None, rho0=None
+        self, model, stepsize=0.9, numsteps=4, seed=None, theta0=None, rho0=None
     ):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
         self._gradient_calls = 0
@@ -21,7 +21,7 @@ class UTurnSampler(ahmc.AdaptiveHmcSampler):
         while True:
             L += 1
             theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
-            dist = sp.spatial.distance.euclidean(theta_next, theta)
+            dist = np.sum((theta_next - theta)**2) # sp.spatial.distance.euclidean(theta_next, theta)
             if dist <= last_dist:
                 return L
             last_dist = dist
@@ -44,7 +44,7 @@ class UTurnSampler(ahmc.AdaptiveHmcSampler):
     def logp_tune(self, theta, rho):
         N = self.uturn(theta, rho)
         if self._numsteps > self.uturn_to_steps(N):
-            return np.log(0)
+            return np.log(0) # U-turn before return
         if self._numsteps <= N:  # add forward and reverse
             self._gradient_calls += N
         steps = self.uturn_to_steps(N)

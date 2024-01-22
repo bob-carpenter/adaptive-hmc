@@ -6,7 +6,7 @@ import pandas as pd
 
 def mean_sq_jump_distance(sample):
     sq_jump = []
-    M = 50
+    M = np.shape(sample)[0]
     for m in range(M - 1):
         jump = sample[m + 1, :] - sample[m, :]
         sq_jump.append(jump.dot(jump))

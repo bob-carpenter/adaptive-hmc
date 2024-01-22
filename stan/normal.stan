@@ -7,6 +7,3 @@ parameters {
 model {
   y ~ normal(0, 1);
 }
-generated quantities {
-  vector<lower=0>[D] y_sq = square(y);
-}
