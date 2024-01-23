@@ -99,7 +99,7 @@ def plot_normal(seed = 1234):
     print(plot)
 
 # stan_model_experiment()    
-# stan_model_experiment_b()    
+stan_model_experiment_b()    
 # plot_normal()
 # uturn_normal(seed = 67375765)    
 uturn_eight_schools(seed = 67375765)    
