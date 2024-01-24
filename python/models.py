@@ -17,9 +17,10 @@ class StdNormal:
 
 
 class StanModel:
-    def __init__(self, file, data = None):
+    def __init__(self, file, data = None, seed = 1234):
         self._model = bs.StanModel(model_lib = file, data = data,
                                        capture_stan_prints = False)
+        self._rng = self._model.new_rng(seed)
         
     def dims(self):
         return self._model.param_num()
@@ -29,3 +30,10 @@ class StanModel:
 
     def log_density_gradient(self, theta):
         return self._model.log_density_gradient(theta)
+
+    def param_constrain(self, theta_unc):
+        return self._model.param_constrain(theta_unc, include_tp = True,
+                                               include_gq = True, rng = self._rng)
+
+    def dims_constrained(self):
+        return self._model.param_num(include_tp = True, include_gq = True)

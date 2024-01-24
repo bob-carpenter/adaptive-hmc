@@ -4,17 +4,12 @@ data {
   array[J] real<lower=0> sigma; // std of estimated effect
 }
 parameters {
-  vector[J] theta_trans; // transformation of theta
-  real mu; // hyper-parameter of mean
-  real<lower=0> tau; // hyper-parameter of sd
-}
-transformed parameters {
-  vector[J] theta;
-  // original theta
-  theta = theta_trans * tau + mu;
+  real<lower=1e-10> tau; // hyper-parameter of sd
+  real<multiplier=10> mu; // hyper-parameter of mean
+  vector<offset = mu, multiplier=tau>[J] theta; // transformation of theta
 }
 model {
-  theta_trans ~ normal(0, 1);
+  theta ~ normal(mu, tau);
   y ~ normal(theta, sigma);
   mu ~ normal(0, 5); // a non-informative prior
   tau ~ cauchy(0, 5);

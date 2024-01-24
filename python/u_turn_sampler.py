@@ -2,6 +2,8 @@ import adaptive_hmc as ahmc
 import numpy as np
 import scipy as sp
 
+UNIFORM = True
+
 class UTurnSampler(ahmc.AdaptiveHmcSampler):
     def __init__(
         self, model, stepsize=0.9, numsteps=4, seed=None, theta0=None, rho0=None
@@ -9,6 +11,7 @@ class UTurnSampler(ahmc.AdaptiveHmcSampler):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
         self._gradient_calls = 0
         self._leapfrog_steps = 0
+        self._uniform_steps = True
 
     def uturn_to_steps(self, N):
         return N + 1
@@ -30,10 +33,12 @@ class UTurnSampler(ahmc.AdaptiveHmcSampler):
         N = self.uturn(self._theta, self._rho)
         steps = self.uturn_to_steps(N)
 
-        self._numsteps = self._rng.integers(1, steps)
-        # (WEIGHT) p = np.arange(1, steps + 1)
-        # (WEIGHT) p = p / np.sum(p)
-        # (WEIGHT) self._numsteps = np.random.choice(a = np.arange(1, steps + 1), p = p)
+        if self._uniform_steps:
+            self._numsteps = self._rng.integers(1, steps)
+        else: 
+            p = np.arange(1, steps + 1)
+            p = p / np.sum(p)
+            self._numsteps = np.random.choice(a = np.arange(1, steps + 1), p = p)
 
         if self._numsteps <= N:
             self._gradient_calls -= self._numsteps  # adjustment for overlap
@@ -49,7 +54,9 @@ class UTurnSampler(ahmc.AdaptiveHmcSampler):
             self._gradient_calls += N
         steps = self.uturn_to_steps(N)
 
-        return -np.log(self.uturn_to_steps(N) - 1)  # steps selected exclusive of end
-        # (WEIGHT) p = np.arange(1, steps + 1)
-        # (WEIGHT) p = p / np.sum(p)
-        # (WEIGHT) return np.log(p[self._numsteps - 1])
+        if self._uniform_steps:
+            return -np.log(self.uturn_to_steps(N) - 1)  # steps selected exclusive of end
+        else:
+            p = np.arange(1, steps + 1)**0.5
+            p = p / np.sum(p)
+            return np.log(p[self._numsteps - 1])
