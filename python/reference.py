@@ -54,7 +54,7 @@ def test_model(config, M, seed = None):
     print(f"{means_sq = }")
     print(f"metric: {np.mean(fit.metric, axis = 0)}")
     model2 = models.StanModel(model_path, data = data_path, seed = seed)
-    stepsize = 0.05
+    stepsize = 0.5
     seed = 12345
     with open(data_path, 'r') as f:
         data_dict = json.load(f)
@@ -72,7 +72,7 @@ def test_model(config, M, seed = None):
     print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
 
     plot_nuts = sq_jump_dist_histogram(draws, "NUTS: " + config['model'])
-    plot_ahmc = sq_jump_dist_histogram(draws2, "AHMC: " + config['model'])
+    plot_ahmc = sq_jump_dist_histogram(draws2_constr, "AHMC: " + config['model'])
     print(plot_nuts, plot_ahmc)
     
 s = 983459874
