@@ -98,6 +98,71 @@ def plot_normal(seed = 1234):
     )
     print(plot)
 
+import u_turn_sampler as uts
+import models
+import util
+import cmdstanpy as csp
+import numpy as np
+import json
+
+eight_schools = {
+    'model': "eight-schools.stan",
+    'data': "eight-schools.json",
+    'params': 10
+}
+
+std_normal = {
+    'model': "normal.stan",
+    'data': "normal.json",
+    'params': 100
+}
+    
+def test_model(config, M, seed = None):
+    print(f"TESTING: {config=}  {M=} {seed=}")
+    if seed == None:
+        seed = 1234 # np.random.randint(1, 100_000)
+    prefix = "../stan/"
+    model_path = prefix + config['model']
+    data_path = prefix + config['data']
+    model = csp.CmdStanModel(stan_file = model_path)
+    fit = model.sample(data = data_path,
+                           step_size = 0.5, adapt_engaged = False, chains = 4,
+                           iter_sampling=2500, seed = seed)
+    draws = fit.draws(concat_chains = True)[:, 7:(7 + config['params'])]
+    print(f"{np.shape(draws) = }")
+    means = np.mean(draws, axis=0)
+    means_sq = np.mean(draws**2, axis=0)
+    print(f"{means = }")
+    print(f"{means_sq = }")
+    print(f"mean sq jumps = {util.mean_sq_jump_distance(draws)}")
+    print("\n\n")
+    print(fit.summary())
+    print(f"metric: {np.mean(fit.metric, axis = 0)}")
+    model2 = models.StanModel(model_path, data = data_path, seed = seed)
+    stepsize = 0.5
+    seed = 12345
+    with open(data_path, 'r') as f:
+        data_dict = json.load(f)
+    sampler = uts.UTurnSampler(model2, stepsize = stepsize, seed = seed)
+    draws2 = sampler.sample(M)
+    D_constr = model2.dims_constrained()
+    draws2_constr = np.empty((M, D_constr))
+
+    for m in range(M):
+        draws2_constr[m, :] = model2.param_constrain(draws2[m, :])
+
+    print(f"{np.shape(draws2_constr) = }")
+    print(f"means: {np.mean(draws2_constr, axis=0) = }")
+    print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
+    print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
+
+
+s = 983459874
+M = 500 * 500
+test_model(std_normal, M = M, seed = s) 
+test_model(eight_schools, M = M, seed = s)
+    
+
 # stan_model_experiment()    
 stan_model_experiment_b()    
 # plot_normal()

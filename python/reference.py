@@ -3,6 +3,9 @@ import models
 import util
 import cmdstanpy as csp
 import numpy as np
+import pandas as pd
+import plotnine as pn
+import matplotlib.pyplot as plt
 import json
 
 eight_schools = {
@@ -11,30 +14,47 @@ eight_schools = {
     'params': 10
 }
 
+std_normal = {
+    'model': "normal.stan",
+    'data': "normal.json",
+    'params': 100
+}
 
-def test_model(config, seed = None):
+def sq_jump_dist_histogram(draws, title):
+    diffs = draws[1:] - draws[:-1]
+    sjds = np.sum(diffs**2, axis=1)
+    df = pd.DataFrame({'SJD': sjds})
+    plot = (
+        pn.ggplot(df, pn.aes(x = 'SJD'))
+        + pn.geom_histogram(color='black', fill='white', bins=20, boundary=0)
+        + pn.geom_vline(xintercept=sjds.mean(), color="blue", size=1)
+        + pn.ggtitle(title)
+    )
+    return plot
+    
+    
+def test_model(config, M, seed = None):
+    print(f"TESTING: {config=}  {M=} {seed=}")
     if seed == None:
-        seed = 1234 # np.random.randint(1, 100_000)
+        np.random.randint(1, 100_000)
     prefix = "../stan/"
     model_path = prefix + config['model']
     data_path = prefix + config['data']
     model = csp.CmdStanModel(stan_file = model_path)
-    fit = model.sample(data = data_path,
-                           step_size = 0.5, adapt_engaged = False, chains = 4,
-                           iter_sampling=2500, seed = seed)
+    chains = 4
+    fit = model.sample(data = data_path, chains = chains,
+                           iter_sampling= M // 4, seed = seed)
     draws = fit.draws(concat_chains = True)[:, 7:(7 + config['params'])]
-    print(f"{np.shape(draws) = }")
     means = np.mean(draws, axis=0)
     means_sq = np.mean(draws**2, axis=0)
-    print(f"{means = }")
-    print(f"{means_sq = }")
+    print(fit.summary())
     print(f"mean sq jumps = {util.mean_sq_jump_distance(draws)}")
     print("\n\n")
-    print(fit.summary())
+    print(f"{means = }")
+    print(f"{means_sq = }")
     print(f"metric: {np.mean(fit.metric, axis = 0)}")
     model2 = models.StanModel(model_path, data = data_path, seed = seed)
-    M = 100 * 100
-    stepsize = 0.5
+    stepsize = 0.05
     seed = 12345
     with open(data_path, 'r') as f:
         data_dict = json.load(f)
@@ -51,4 +71,11 @@ def test_model(config, seed = None):
     print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
     print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
 
-test_model(eight_schools, 5678)
+    plot_nuts = sq_jump_dist_histogram(draws, "NUTS: " + config['model'])
+    plot_ahmc = sq_jump_dist_histogram(draws2, "AHMC: " + config['model'])
+    print(plot_nuts, plot_ahmc)
+    
+s = 983459874
+M = 100 * 100
+# test_model(std_normal, M = M, seed = s) 
+test_model(eight_schools, M = M, seed = s)
