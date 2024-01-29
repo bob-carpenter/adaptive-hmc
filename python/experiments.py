@@ -159,7 +159,7 @@ def test_model(config, M, seed = None):
 
 s = 983459874
 M = 500 * 500
-test_model(std_normal, M = M, seed = s) 
+etest_model(std_normal, M = M, seed = s) 
 test_model(eight_schools, M = M, seed = s)
     
 

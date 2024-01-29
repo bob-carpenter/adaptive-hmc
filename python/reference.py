@@ -20,17 +20,12 @@ std_normal = {
     'params': 100
 }
 
-def sq_jump_dist_histogram(draws, title):
+def sq_jump_dist_df(draws, sampler):
     diffs = draws[1:] - draws[:-1]
     sjds = np.sum(diffs**2, axis=1)
-    df = pd.DataFrame({'SJD': sjds})
-    plot = (
-        pn.ggplot(df, pn.aes(x = 'SJD'))
-        + pn.geom_histogram(color='black', fill='white', bins=20, boundary=0)
-        + pn.geom_vline(xintercept=sjds.mean(), color="blue", size=1)
-        + pn.ggtitle(title)
-    )
-    return plot
+    size = np.size(sjds)
+    df = pd.DataFrame({'SJD': sjds, 'sampler': np.full(size, sampler)})
+    return df, np.mean(sjds)
     
     
 def test_model(config, M, seed = None):
@@ -42,7 +37,14 @@ def test_model(config, M, seed = None):
     data_path = prefix + config['data']
     model = csp.CmdStanModel(stan_file = model_path)
     chains = 4
+    metric_diag = {'inv_metric': np.ones(config['params'])}
+    print(f"{metric_diag = }")
     fit = model.sample(data = data_path, chains = chains,
+                           show_console = True,
+                           adapt_engaged = False,
+                           metric=metric_diag,
+                           step_size = 0.5,
+                           iter_warmup=0,
                            iter_sampling= M // 4, seed = seed)
     draws = fit.draws(concat_chains = True)[:, 7:(7 + config['params'])]
     means = np.mean(draws, axis=0)
@@ -71,11 +73,21 @@ def test_model(config, M, seed = None):
     print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
     print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
 
-    plot_nuts = sq_jump_dist_histogram(draws, "NUTS: " + config['model'])
-    plot_ahmc = sq_jump_dist_histogram(draws2_constr, "AHMC: " + config['model'])
-    print(plot_nuts, plot_ahmc)
-    
+    df_nuts, msjd_nuts = sq_jump_dist_df(draws, "NUTS")
+    df_ahmc, msjd_ahmc = sq_jump_dist_df(draws2_constr, "AHMC")
+    df_lines = pd.DataFrame({ 'xintercept': [ msjd_nuts, msjd_ahmc ],
+                                  'sampler' : [ "NUTS", "AHMC" ]})
+    df = pd.concat([df_nuts, df_ahmc], ignore_index=True)
+    plot = (
+        pn.ggplot(df, pn.aes(x = 'SJD'))
+        + pn.geom_histogram(color='black', fill='white', bins=100, boundary=0)
+        + pn.geom_vline(pn.aes(xintercept='xintercept'), data=df_lines,
+                            color="blue", size=1)
+        + pn.facet_grid('sampler ~ .')
+    )
+    print(plot)
+
 s = 983459874
-M = 100 * 100
+M = 500 * 500
 # test_model(std_normal, M = M, seed = s) 
 test_model(eight_schools, M = M, seed = s)
