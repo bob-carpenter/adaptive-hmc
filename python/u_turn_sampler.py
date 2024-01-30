@@ -11,52 +11,29 @@ class UTurnSampler(ahmc.AdaptiveHmcSampler):
         super().__init__(model, stepsize, numsteps, seed, theta0, rho0)
         self._gradient_calls = 0
         self._leapfrog_steps = 0
-        self._uniform_steps = True
-
-    def uturn_to_steps(self, N):
-        return N + 1
 
     def uturn(self, theta, rho):
         theta_next = theta
         rho_next = rho
         last_dist = 0
-        L = 0
+        N = 0
         while True:
-            L += 1
             theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
             dist = np.sum((theta_next - theta)**2) # sp.spatial.distance.euclidean(theta_next, theta)
             if dist <= last_dist:
-                return L
+                return N
             last_dist = dist
+            N += 1
 
     def sample_tuning(self):
         N = self.uturn(self._theta, self._rho)
-        steps = self.uturn_to_steps(N)
-
-        if self._uniform_steps:
-            self._numsteps = self._rng.integers(1, steps)
-        else: 
-            p = np.arange(1, steps + 1)
-            p = p / np.sum(p)
-            self._numsteps = np.random.choice(a = np.arange(1, steps + 1), p = p)
-
-        if self._numsteps <= N:
-            self._gradient_calls -= self._numsteps  # adjustment for overlap
-        else:
-            self._gradient_calls += self._numsteps  # rev subseq of fwd
+        self._numsteps = self._rng.integers(1, N + 1)
+        self._gradient_calls -= self._numsteps  # adjustment for overlap
         self._leapfrog_steps += self._numsteps
 
     def logp_tune(self, theta, rho):
         N = self.uturn(theta, rho)
-        if self._numsteps > self.uturn_to_steps(N):
-            return np.log(0) # U-turn before return
-        if self._numsteps <= N:  # add forward and reverse
-            self._gradient_calls += N
-        steps = self.uturn_to_steps(N)
-
-        if self._uniform_steps:
-            return -np.log(self.uturn_to_steps(N) - 1)  # steps selected exclusive of end
-        else:
-            p = np.arange(1, steps + 1)**0.5
-            p = p / np.sum(p)
-            return np.log(p[self._numsteps - 1])
+        # if self._numsteps > self.uturn_to_steps(N):
+        #    return np.log(0) # U-turn before return
+        self._gradient_calls += N
+        return -np.log(N)

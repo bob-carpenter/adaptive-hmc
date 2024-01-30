@@ -54,7 +54,7 @@ class AdaptiveHmcSampler:
         logp_tune_prop = self.logp_tune(theta_prop, rho_prop)
 
         self._proposed += 1
-        if np.log(self._rng.uniform()) < (logp_prop - logp) + (logp_tune_prop - logp_tune):
+        if np.log(self._rng.uniform()) < ((logp_prop + logp_tune_prop) - (logp + logp_tune)):
             self._accepted += 1
             self._theta = theta_prop
             self._rho = rho_prop

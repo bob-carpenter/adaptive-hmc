@@ -82,21 +82,26 @@ def uturn_normal(seed = 1234):
 def plot_normal(seed = 1234):
     D = 5
     model = models.StdNormal(D)
-    stepsize = 0.9
+    stepsize = 0.5
     M = 100_000
-    sampler = uts.UTurnSampler(model, stepsize, seed = seed)
+    sampler = uts.UTurnSampler(model, stepsize = stepsize, seed = seed)
     sample = sampler.sample(M)
+    print(f"E[X]: {np.mean(sample, axis=0)}")
+    print(f"E[X^2]: {np.mean(sample**2, axis=0)}")    
     df = pd.DataFrame({"x": sample[1:M, 1]})
+    # cf. fully random:
+    # df = pd.DataFrame({"x": np.random.randn(M)})
     plot = (
         pn.ggplot(df, pn.aes(x="x"))
         + pn.geom_histogram(
-            pn.aes(y="..density.."), bins=30, color="black", fill="white"
+            pn.aes(y="..density.."), bins=50, color="black", fill="white"
         )
         + pn.stat_function(
             fun=sp.stats.norm.pdf, args={"loc": 0, "scale": 1}, color="red", size=1
         )
     )
     print(plot)
+
 
 import u_turn_sampler as uts
 import models
@@ -159,12 +164,12 @@ def test_model(config, M, seed = None):
 
 s = 983459874
 M = 500 * 500
-etest_model(std_normal, M = M, seed = s) 
-test_model(eight_schools, M = M, seed = s)
+# test_model(std_normal, M = M, seed = s) 
+# test_model(eight_schools, M = M, seed = s)
     
 
 # stan_model_experiment()    
-stan_model_experiment_b()    
-# plot_normal()
+# stan_model_experiment_b()    
+plot_normal(647483)
 # uturn_normal(seed = 67375765)    
-uturn_eight_schools(seed = 67375765)    
+# uturn_eight_schools(seed = 67375765)    

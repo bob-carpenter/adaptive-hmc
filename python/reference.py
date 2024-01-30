@@ -56,7 +56,7 @@ def test_model(config, M, seed = None):
     print(f"{means_sq = }")
     print(f"metric: {np.mean(fit.metric, axis = 0)}")
     model2 = models.StanModel(model_path, data = data_path, seed = seed)
-    stepsize = 0.5
+    stepsize = 0.9
     seed = 12345
     with open(data_path, 'r') as f:
         data_dict = json.load(f)
