@@ -40,7 +40,7 @@ def test_model(config, M, seed = None):
     metric_diag = {'inv_metric': np.ones(config['params'])}
     print(f"{metric_diag = }")
     fit = model.sample(data = data_path, chains = chains,
-                           show_console = True,
+                           show_console = False,
                            adapt_engaged = False,
                            metric=metric_diag,
                            step_size = 0.5,
@@ -87,7 +87,7 @@ def test_model(config, M, seed = None):
     )
     print(plot)
 
-s = 983459874
-M = 500 * 500
-# test_model(std_normal, M = M, seed = s) 
-test_model(eight_schools, M = M, seed = s)
+s = 848787
+M = 400 * 400
+test_model(std_normal, M = M, seed = s) 
+# test_model(eight_schools, M = M, seed = s)

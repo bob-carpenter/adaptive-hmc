@@ -27,7 +27,7 @@ class StanModel:
 
     def log_density(self, theta):
         return self._model.log_density(theta)
-
+        
     def log_density_gradient(self, theta):
         return self._model.log_density_gradient(theta)
 
