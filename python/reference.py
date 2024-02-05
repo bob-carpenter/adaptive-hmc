@@ -56,15 +56,25 @@ def test_model(config, M, seed = None):
     print(f"{means_sq = }")
     print(f"metric: {np.mean(fit.metric, axis = 0)}")
     model2 = models.StanModel(model_path, data = data_path, seed = seed)
-    stepsize = 0.9
+    stepsize = 0.5
     seed = 12345
     with open(data_path, 'r') as f:
         data_dict = json.load(f)
-    sampler = uts.UTurnSampler(model2, stepsize = stepsize, seed = seed)
+    sampler = uts.UTurnBinomialSampler(model2, stepsize = stepsize, seed = seed)
     draws2 = sampler.sample(M)
     D_constr = model2.dims_constrained()
     draws2_constr = np.empty((M, D_constr))
 
+    dfNM = pd.DataFrame(np.array(sampler._NMsteps).reshape(-1, 2),
+                          columns = ['N', 'M'])
+    df_log_M_over_N = pd.DataFrame({'log(M / N)': np.log(dfNM['M'] / dfNM['N'])})
+    plotNMhist = (
+        pn.ggplot(df_log_M_over_N, pn.aes(x = 'log(M / N)'))
+        + pn.geom_histogram(color='black', fill='white', bins=51, center=0)
+        + pn.ggtitle(config['model'])
+    )
+    print(plotNMhist)
+   
     for m in range(M):
         draws2_constr[m, :] = model2.param_constrain(draws2[m, :])
 
@@ -84,10 +94,11 @@ def test_model(config, M, seed = None):
         + pn.geom_vline(pn.aes(xintercept='xintercept'), data=df_lines,
                             color="blue", size=1)
         + pn.facet_grid('sampler ~ .')
+        + pn.ggtitle(config['model'])
     )
     print(plot)
 
 s = 848787
-M = 400 * 400
+M = 100 * 100
 test_model(std_normal, M = M, seed = s) 
-# test_model(eight_schools, M = M, seed = s)
+test_model(eight_schools, M = M, seed = s)
