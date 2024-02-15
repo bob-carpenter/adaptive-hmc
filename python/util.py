@@ -122,7 +122,6 @@ def inverse_Hessian_approx(positions, gradients, H=None):
         r = 1/(y.T@s)
         if r < 0:               # Curvature condition to ensure positive definite
             not_pos +=1 
-            print(not_pos)
             continue
         not_pos = 0 
         li = (np.eye(d)-(r*((s@(y.T)))))
@@ -133,7 +132,7 @@ def inverse_Hessian_approx(positions, gradients, H=None):
         nabla = nabla_new[:].flatten()
         x = x_new[:].flatten()
     
-    return H
+    return H, not_pos
 
 
     

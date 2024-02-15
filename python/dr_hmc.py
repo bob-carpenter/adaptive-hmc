@@ -4,15 +4,17 @@ from scipy.stats import expon, beta, multivariate_normal
 from util import Sampler, inverse_Hessian_approx, DualAveragingStepSize
 
 
-def get_stepsize_dist(eps, epsmax, min_fac=100):
+def get_stepsize_dist(eps, epsmax, min_fac=500):
     """return a beta distribution given the mean step-size, max step-size and min step size(factor).
     Mean of the distribution=eps. Mode of the distribution=eps/2
     """
     epsmin = epsmax/min_fac
-    scale = epsmax*0.9
+    scale = epsmax-epsmin
     eps_scaled = eps/epsmax
-    b = (2-eps_scaled) * (1-eps_scaled)/eps_scaled
-    a = 2-eps_scaled
+    b = 2 * (1-eps_scaled)**2/eps_scaled
+    a = 2 * (1-eps_scaled)
+    #b = 2 * (1-eps_scaled)*(2-eps_scaled)/eps_scaled
+    #a = (2-eps_scaled)
     dist = beta(a=a, b=b, loc=epsmin, scale=scale)
     return dist
 
@@ -36,14 +38,19 @@ class DRHMC_AdaptiveStepsize():
         self.Hcount = 0
 
 
-    def adapt_stepsize(self, q, epsadapt):
+    def adapt_stepsize(self, q, epsadapt, target_accept=0.65):
         print("Adapting step size for %d iterations"%epsadapt)
         step_size = self.step_size
-        epsadapt_kernel = DualAveragingStepSize(step_size)
+        epsadapt_kernel = DualAveragingStepSize(step_size, target_accept=target_accept)
 
         for i in range(epsadapt+1):
+            qprev = q.copy()
             q, p, acc, Hs, count = self.step(q, self.nleap, step_size)
-            prob = np.exp(Hs[0] - Hs[1])
+            if (qprev == q).all():
+                prob = 0 
+            else:
+                prob = np.exp(Hs[0] - Hs[1])
+                
             if i < epsadapt:
                 if np.isnan(prob) or np.isinf(prob): 
                     prob = 0.
@@ -113,8 +120,8 @@ class DRHMC_AdaptiveStepsize():
 
         q0, p0 = qp0
         q1, p1 = qp1
-        H0 = self.H(q0, p0, M)
-        H1 = self.H(q1, p1, M)
+        H0 = self.H(q0, p0)
+        H1 = self.H(q1, p1)
         log_prob = H0 - H1
 
         u =  np.random.uniform(0., 1., size=1)
@@ -132,10 +139,14 @@ class DRHMC_AdaptiveStepsize():
 
         try:
             # Estimate the Hessian given the rejected trajectory, use it to estimate step-size
-            invh_est = inverse_Hessian_approx(np.array(qvec[::-1]), np.array(gvec[::-1]))
+            invh_est, skipped_steps = inverse_Hessian_approx(np.array(qvec[::-1]), np.array(gvec[::-1]))
+            if nleap - skipped_steps < 5:
+                print("not enough for correct Hessian")
+                raise
             h_est = np.linalg.inv(invh_est)
             eigv = np.linalg.eigvals(h_est)
-            eps = min(step_size/2, np.sqrt(1/ eigv.max().real))
+            eps = min(0.5*step_size, 0.5*np.sqrt(1/ eigv.max().real))
+            if verbose: print(0.5*np.sqrt(1/ eigv.max().real))
             epsf1 = get_stepsize_dist(eps, step_size)
             step_size2 = epsf1.rvs(size=1)
             
@@ -144,37 +155,48 @@ class DRHMC_AdaptiveStepsize():
             H0 = self.H(q0, p0)
             H1 = self.H(q1, p1)
             vanilla_prob = np.exp(H0 - H1)
-
+            if np.isnan(vanilla_prob) or np.isinf(vanilla_prob) or (q0-q1).sum()==0:
+                vanilla_prob = 0.
+            
             # Ghost trajectory for the second proposal
             q1_ghost, p1_ghost, qvec2, gvec2 = self.leapfrog(q1, -p1, nleap, step_size)
             H0 = self.H(q1, p1)
             H1 = self.H(q1_ghost, p1_ghost)
-            prob_accept2 = min(1., np.exp(H0 - H1))
+            prob_accept2 = np.exp(H0 - H1)
+            if np.isnan(prob_accept2) or np.isinf(prob_accept2) or (q1_ghost-q1).sum()==0:
+                prob_accept2 = 0.
+            else:
+                prob_accept2 = min(1., prob_accept2)
             if verbose: print("first and ghost accept probs: ", prob_accept1, prob_accept2)
 
             # Estimate Hessian and step-size distribution for ghost trajectory
-            invh_est2 = inverse_Hessian_approx(np.array(qvec2[::-1]), np.array(gvec2[::-1]))
+            invh_est2, skipped_steps = inverse_Hessian_approx(np.array(qvec2[::-1]), np.array(gvec2[::-1]))
+            if nleap - skipped_steps < 5:
+                print("not enough for correct Hessian")
+                raise
             h_est2 = np.linalg.inv(invh_est2)
             eigv2 = np.linalg.eigvals(h_est2)
-            eps2 = min(step_size/2, np.sqrt(1/ eigv2.max().real))
-            epsf2 = get_stepsize_dist(eps, step_size)
-            if verbose: print(step_size, step_size2, eps, eps2)
+            eps2 = min(0.5*step_size, 0.5*np.sqrt(1/ eigv2.max().real))
+            if verbose: print(0.5*np.sqrt(1/ eigv2.max().real))
+            epsf2 = get_stepsize_dist(eps2, step_size)
+            if verbose:
+                print("original, new step size : ", step_size, step_size2)
+                print("max allowed step size: : ", eps, eps2)
 
             # Calcualte different Hastings corrections
             prob_delayed = (1-prob_accept2) / (1- prob_accept1)
             prob_eps = np.exp(epsf2.logpdf(step_size2) - epsf1.logpdf(step_size2) )        
             prob = vanilla_prob* prob_eps * prob_delayed
-            if verbose: print(f"prob : {prob}\nvanilla_prob : {vanilla_prob}\nprob_eps : {prob_eps}\nprob_delayed : {prob_delayed}")
-
+            if verbose: print(f"vanilla_prob : {vanilla_prob}\nprob_eps : {prob_eps}\nprob_delayed : {prob_delayed}\nprob : {prob}")
             u =  np.random.uniform(0., 1., size=1)
             if np.isnan(prob) or np.isinf(prob) or (q0-q1).sum()==0:
-                if verbose: print("reject")
+                if verbose: print("reject\n")
                 return q0, p0, -1, [H0, H1]
             elif  u > min(1., prob):
-                if verbose: print("reject")
-                return q0, p0, 0., [H0, H1]
+                if verbose: print("reject\n")
+                return q0, p0, 0, [H0, H1]
             else: 
-                if verbose: print("accept")
+                if verbose: print("accept\n")
                 return q1, p1, 2., [H0, H1]
             
         except Exception as e:
@@ -182,22 +204,28 @@ class DRHMC_AdaptiveStepsize():
             return q0, p0, -1, [H0, H1]
             
         
-    def step(self, q):
+    def step(self, q, nleap=None, step_size=None):
+
+        if nleap is None: nleap = self.nleap
+        if step_size is None: step_size = self.step_size
 
         self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
         
         KE = self.setup_KE(self.mass_matrix)
         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
-        q1, p1, qvec, gvec = self.leapfrog(q, p, self.nleap, self.step_size)
+        q1, p1, qvec, gvec = self.leapfrog(q, p, N=nleap, step_size=step_size)
         qf, pf, accepted, Hs = self.metropolis([q, p], [q1, p1])
         prob_accept1 = min(1., np.exp(Hs[0] - Hs[1]))
         
         if (accepted == 0 ) & self.delayed_proposals:
-            qf, pf, accepted, Hs= self.delayed_step(q, p, qvec, gvec, self.nleap, self.step_size, prob_accept1=prob_accept1)
+            qf, pf, accepted, Hs= self.delayed_step(q, p, qvec, gvec, nleap=nleap, step_size=step_size, prob_accept1=prob_accept1)
         return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount]
 
 
-    def sample(self, q, p=None, callback=None, epsadapt=0, nsamples=100, delayed_proposals=True, burnin=0, step_size=0.1, nleap=10, verbose=False):
+    def sample(self, q, p=None,
+               nsamples=100, burnin=0, step_size=0.1, nleap=10, delayed_proposals=True, 
+               epsadapt=0, target_accept=0.65,
+               callback=None, verbose=False):
 
         self.nsamples = nsamples
         self.burnin = burnin
@@ -211,7 +239,7 @@ class DRHMC_AdaptiveStepsize():
         state = Sampler()
 
         if epsadapt:
-            q = self.adapt_stepsize(q, epsadapt) 
+            q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
 
         for i in range(self.nsamples + self.burnin):
             q, p, acc, Hs, count = self.step(q) 
