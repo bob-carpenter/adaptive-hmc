@@ -30,7 +30,6 @@ class Sampler():
     def to_array(self):
         for key in self.__dict__:
             if type(self.__dict__[key]) == list:
-                print(key)
                 self.__dict__[key] = np.array(self.__dict__[key])            
 
     def to_list(self):
