@@ -204,9 +204,11 @@ class DRHMC_AdaptiveStepsize():
             step_size_new = epsf1.rvs(size=1)[0]
             
             # Make the second proposal
-            #nleap2 = int(min(nleap*step_size/step_size_new, nleap*100))
-            nleap2 = int(nleap)
-            q1, p1, _, _ = self.leapfrog(q0, p0, nleap2, step_size_new)
+            if self.constant_trajectory:
+                nleap_new = int(min(nleap*step_size/step_size_new, nleap*100))
+            else:
+                nleap_new = int(nleap)
+            q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
             vanilla_log_prob = self.accept_log_prob([q0, p0], [q1, p1])
             
             # Ghost trajectory for the second proposal
@@ -273,7 +275,8 @@ class DRHMC_AdaptiveStepsize():
 
 
     def sample(self, q, p=None,
-               nsamples=100, burnin=0, step_size=0.1, nleap=10, delayed_proposals=True, 
+               nsamples=100, burnin=0, step_size=0.1, nleap=10,
+               delayed_proposals=True, constant_trajectory=False,
                epsadapt=0, target_accept=0.65,
                callback=None, verbose=False):
 
@@ -282,6 +285,7 @@ class DRHMC_AdaptiveStepsize():
         self.step_size = step_size
         self.nleap = nleap
         self.delayed_proposals = delayed_proposals
+        self.constant_trajectory = constant_trajectory
         self.verbose = verbose
 
         state = Sampler()
