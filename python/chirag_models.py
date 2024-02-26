@@ -20,29 +20,32 @@ def setup_pdb(model_n):
         print(e)
         ref_samples = None
 
-    return model, D, lp, lp_g, ref_samples
+    return model, D, lp, lp_g, ref_samples, None
 
 
 
 ### setup funnel
 def funnel(D):
-    bsmodel = bs.StanModel.from_stan_file(f"../stan/funnel_{D}.stan", 
-                                          f"../stan/funnel.data.json")
+    stanfile = f"../stan/funnel_{D}.stan"
+    datafile = f"../stan/funnel.data.json"
+    bsmodel = bs.StanModel.from_stan_file(stanfile, datafile)
 
     D = bsmodel.param_num()
     lp = lambda x: bsmodel.log_density(x)
     lp_g = lambda x: bsmodel.log_density_gradient(x)[1]
-    return bsmodel, D, lp, lp_g, None
+    return bsmodel, D, lp, lp_g, None, [stanfile, datafile]
+
 
 ### setup funnel
 def rosenbrock(D):
-    bsmodel = bs.StanModel.from_stan_file(f"../stan/rosenbrock_{D}.stan", 
-                                          f"../stan/rosenbrock.data.json")
+    stanfile = f"../stan/rosenbrock_{D}.stan" 
+    datafile = f"../stan/rosenbrock.data.json"
+    bsmodel = bs.StanModel.from_stan_file(stanfile, datafile)
 
     D = bsmodel.param_num()
     lp = lambda x: bsmodel.log_density(x)
     lp_g = lambda x: bsmodel.log_density_gradient(x)[1]
-    return bsmodel, D, lp, lp_g, None
+    return bsmodel, D, lp, lp_g, None, [stanfile, datafile]
 
 
 ### setup rosenbrock
