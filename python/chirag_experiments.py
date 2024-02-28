@@ -20,8 +20,25 @@ print('My rank is ',wrank)
 savepath = '/mnt/ceph/users/cmodi/adaptive_hmc/'
 
 #######
-experiment = sys.argv[1] #'funnel'
-n = sys.argv[2]
+import argparse
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--exp', type=str, help='which experiment')
+parser.add_argument('-n', type=int, help='dimensionality or model number')
+#arguments for GSM
+parser.add_argument('--nleap', type=int, default=40, help='number of leapfrog steps')
+parser.add_argument('--nsamples', type=int, default=1001, help='number of samples')
+parser.add_argument('--burnin', type=int, default=10, help='number of iterations for burn-in')
+parser.add_argument('--stepadapt', type=int, default=100, help='step size adaptation')
+parser.add_argument('--nleapadapt', type=int, default=100, help='step size adaptation')
+parser.add_argument('--targetaccept', type=float, default=0.68, help='target acceptance')
+parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
+#arguments for path name
+parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
+
+
+args = parser.parse_args()
+experiment = args.exp
+n = args.n
 
 if experiment == 'pdb':
     model, D, lp, lp_g, ref_samples, files = chirag_models.setup_pdb(n)
@@ -40,15 +57,16 @@ if experiment == 'rosenbrock':
 ###################################
 ##### Setup the algorithm parameters
 
-nleap = 100
-step_size = 0.1
-nsamples = 10000
-burnin = 1000
-n_stepsize_adapt = 1000
-nleap_adapt = 10
+nleap = args.nleap
+step_size = args.stepsize
+nsamples = args.nsamples
+burnin = args.burnin
+n_stepsize_adapt = args.stepadapt
+nleap_adapt = args.nleapadapt
 nchains = wsize
-target_accept = 0.68
+target_accept = args.targetaccept
 savepath = f"{savepath}/nleap{nleap}/"
+print(f"Saving runs in folder : {savepath}")
 
 debug = False
 if debug:
@@ -113,7 +131,7 @@ if wrank == 0:
     draws_pd = sample.draws_pd()
     if not debug:
         samples_nuts, leapfrogs_nuts = util.cmdstanpy_wrapper(draws_pd, savepath=f'{savepath}/nuts/')
-        np.save(f'{savepath}/nuts/', sample.step_size)
+        np.save(f'{savepath}/nuts/stepsize', sample.step_size)
         
     # plot
     print("\nPlotting")
