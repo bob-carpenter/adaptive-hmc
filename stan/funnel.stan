@@ -1,7 +1,10 @@
+data {
+  int<lower=0> D;
+}
 
 parameters {
   real v; 
-  vector[50] theta;
+  vector[D] theta;
 }
 
 model {
