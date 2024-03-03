@@ -2,7 +2,7 @@ import numpy as np
 import sys, time
 import matplotlib.pyplot as plt
 
-from dr_hmc import DRHMC_AdaptiveStepsize
+from dr_hmc import DRHMC_AdaptiveStepsize, DRHMC_AdaptiveStepsize_autotune
 from mpi4py import MPI
 import util
 
@@ -30,8 +30,10 @@ parser.add_argument('--nsamples', type=int, default=1001, help='number of sample
 parser.add_argument('--burnin', type=int, default=10, help='number of iterations for burn-in')
 parser.add_argument('--stepadapt', type=int, default=100, help='step size adaptation')
 parser.add_argument('--nleapadapt', type=int, default=100, help='step size adaptation')
-parser.add_argument('--targetaccept', type=float, default=0.68, help='target acceptance')
+parser.add_argument('--targetaccept', type=float, default=0.80, help='target acceptance')
 parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
+parser.add_argument('--adapt_traj', type=int, default=1, help='adapt trajectory')
+parser.add_argument('--constant_traj', type=int, default=0, help='constant trajectory for delayed')
 #arguments for path name
 parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
 
@@ -65,10 +67,16 @@ n_stepsize_adapt = args.stepadapt
 nleap_adapt = args.nleapadapt
 nchains = wsize
 target_accept = args.targetaccept
-savepath = f"{savepath}/nleap{nleap}/"
+adapt_traj = bool(args.adapt_traj)
+constant_traj = bool(args.constant_traj)
+if adapt_traj:
+    print("Adapting trajectory length")
+    savepath = f"{savepath}/autotune/"
+else:
+    savepath = f"{savepath}/nleap{nleap}/"
 print(f"Saving runs in folder : {savepath}")
 
-debug = False
+debug = True
 if debug:
     nsamples = 1000
     burnin = 100
@@ -78,11 +86,18 @@ if debug:
 #############
 # Vanilla HMC
 np.random.seed(0)
-kernel = DRHMC_AdaptiveStepsize(D, lp, lp_g, mass_matrix=np.eye(D))
 q0 = np.random.normal(np.zeros(D*nchains).reshape(nchains, D))
-sampler = kernel.sample(q0[wrank], nleap=nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
-                        epsadapt=n_stepsize_adapt, target_accept=target_accept, #nleap_adapt=nleap_adapt,
+if adapt_traj:
+    kernel = DRHMC_AdaptiveStepsize_autotune(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=10)
+    sampler = kernel.sample(q0[wrank], nleap=nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
+                        epsadapt=n_stepsize_adapt, target_accept=target_accept, nleap_adapt=nleap_adapt,
                         delayed_proposals=False, verbose=False)
+else:
+    kernel = DRHMC_AdaptiveStepsize(D, lp, lp_g, mass_matrix=np.eye(D))
+    sampler = kernel.sample(q0[wrank], nleap=nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
+                        epsadapt=n_stepsize_adapt, target_accept=target_accept, 
+                        delayed_proposals=False, verbose=False)
+
 print(f"Acceptance for HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
 if not debug: sampler.save(path=f"{savepath}/hmc/", suffix=f"-{wrank}")
          
@@ -95,14 +110,27 @@ comm.Barrier()
 
 # Adaptive DRHMC
 np.random.seed(0)
-kernel = DRHMC_AdaptiveStepsize(D, lp, lp_g, mass_matrix=np.eye(D))
 q0 = np.random.normal(np.zeros(D*nchains).reshape(nchains, D))
-sampler_adapt = kernel.sample(q0[wrank], nleap=nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
-                         epsadapt=n_stepsize_adapt, target_accept=target_accept, #nleap_adapt=nleap_adapt,
-                         delayed_proposals=True, constant_trajectory=False,
+if adapt_traj:
+    kernel = DRHMC_AdaptiveStepsize_autotune(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=10)
+    sampler_adapt = kernel.sample(q0[wrank], nleap=nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
+                         epsadapt=n_stepsize_adapt, target_accept=target_accept, nleap_adapt=nleap_adapt,
+                         delayed_proposals=True, constant_trajectory=constant_traj,
                          verbose=False)
+else:
+    kernel = DRHMC_AdaptiveStepsize(D, lp, lp_g, mass_matrix=np.eye(D))
+    sampler_adapt = kernel.sample(q0[wrank], nleap=nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
+                         epsadapt=n_stepsize_adapt, target_accept=target_accept, 
+                         delayed_proposals=True, constant_trajectory=constant_traj,
+                         verbose=False)
+
+    
 print(f"Acceptance for adaptive HMC in chain {wrank} : ", np.unique(sampler_adapt.accepts, return_counts=True))
-if not debug : sampler_adapt.save(path=f"{savepath}/adrhmc/", suffix=f"-{wrank}")
+if not debug :
+    if constant_traj:
+        sampler_adapt.save(path=f"{savepath}/adrhmc_ctraj/", suffix=f"-{wrank}")
+    else:
+        sampler_adapt.save(path=f"{savepath}/adrhmc/", suffix=f"-{wrank}")
 comm.Barrier()
 
 samples_adapt = comm.gather(sampler_adapt.samples, root=0)
@@ -132,6 +160,8 @@ if wrank == 0:
     if not debug:
         samples_nuts, leapfrogs_nuts = util.cmdstanpy_wrapper(draws_pd, savepath=f'{savepath}/nuts/')
         np.save(f'{savepath}/nuts/stepsize', sample.step_size)
+    else:
+        samples_nuts, leapfrogs_nuts = util.cmdstanpy_wrapper(draws_pd, savepath=None)
         
     # plot
     print("\nPlotting")
@@ -144,8 +174,11 @@ if wrank == 0:
     plt.legend()
     plt.savefig('tmp.png')
     plt.close()
+
     print()
     print("Total accpetances for HMC : ", np.unique(np.stack(accepts_hmc), return_counts=True))
-
     print("Total accpetances for adaptive HMC : ", np.unique(np.stack(accepts_adapt), return_counts=True))
 
+comm.Barrier()
+
+sys.exit()

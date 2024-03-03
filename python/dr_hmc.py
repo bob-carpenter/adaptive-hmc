@@ -187,6 +187,12 @@ class DRHMC_AdaptiveStepsize():
             raise
         eps = min(0.5*step_size, 0.5*np.sqrt(1/ eigv))
         epsf = get_beta_dist(eps, step_size)
+        # eps = 0.5*np.sqrt(1/ eigv)
+        # if eps < step_size:
+        #     epsf = get_beta_dist(eps, step_size)
+        # else:
+        #     #print("increase step size?")
+        #     epsf = get_beta_dist(step_size, eps)
         return eps, epsf
         
         
@@ -309,18 +315,14 @@ class DRHMC_AdaptiveStepsize():
         return state
     
 
-
-
-
-
     
 
 class DRHMC_AdaptiveStepsize_autotune(DRHMC_AdaptiveStepsize):
 
-    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None):
+    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=1024):
         super(DRHMC_AdaptiveStepsize_autotune, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
-        self.min_nleap = 10 
-        self.max_nleap = 1024 
+        self.min_nleap = min_nleap
+        self.max_nleap = max_nleap
 
     def uturn(self, theta, rho, step_size): # Can be deleted as no longer used
             theta_next = theta
@@ -395,23 +397,28 @@ class DRHMC_AdaptiveStepsize_autotune(DRHMC_AdaptiveStepsize):
             step_size, avgstepsize = epsadapt_kernel.update(prob)
 
         # construct a distribution of leap frog steps
-        #print("traj array : ", self.traj_array)
         self.step_size = step_size
-        self.traj_array *= 2/3.
+        self.traj_array *= 1.
         return q
 
 
-    def nleap_jitter(self, lowp=10, midp=25, highp=40):
+    def nleap_jitter(self, lowp=10, midp=30, highp=50):
 
         self.trajectory = np.percentile(self.traj_array, midp)
         print(f'base trajectory length = {self.trajectory}' )
 
         self.nleap_array = (self.traj_array / self.step_size).astype(int)
         self.nleap = max(self.min_nleap, int(self.trajectory / self.step_size))
-        low = int(np.percentile(self.nleap_array, lowp)),
-        high = max(int(np.percentile(self.nleap_array, highp)), lowp+1)
-        print(f"Number of steps vary uniformly between {low} and {high}")
-        self.nleap_dist = lambda x : max(self.min_nleap, np.random.randint(low=low, high=high))
+        low = int(np.percentile(self.nleap_array, lowp))
+        high = int(np.percentile(self.nleap_array, highp))
+        print(f"Min and max number of leapfrog steps identified to be {low} and {high}")
+        if low < self.min_nleap:
+            low = self.min_nleap
+            print(f"Raise min leapfrog steps to default min_nleap = {self.min_nleap}")
+        if (high < low) or (high < self.min_nleap * 2):
+            high = self.min_nleap * 2
+            print(f"Raise min leapfrog steps to default 2 x min_nleap = {2*self.min_nleap}")
+        self.nleap_dist = lambda x : np.random.randint(low=low, high=high)
             
 
     def sample(self, q, p=None,
