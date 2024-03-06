@@ -154,7 +154,8 @@ def Hessian_approx(positions, gradients, H=None):
     x = positions[0]
     
     it = 0 
-    not_pos = 0 
+    not_pos = 0
+    point_used = 0 
     for i in range(npos-1):
         it += 1
         x_new = positions[i+1]
@@ -168,12 +169,13 @@ def Hessian_approx(positions, gradients, H=None):
         if (H is None) : #initialize based on, but before first update. Taken from Nocedal
             #H = np.eye(x.size) * np.dot(y,s)/np.dot(y, y) #gets confusing if we multiply or divide
             H = np.eye(x.size) / np.dot(y,s) *np.dot(y, y) 
+        point_used +=1
         z = np.dot(H, s)
         update = np.outer(y, y) / np.dot(s, y) - np.outer(z, z) / np.dot(s, z)
         H += update
         nabla = nabla_new[:].flatten()
         x = x_new[:].flatten()
-    return H, not_pos
+    return H, point_used #not_pos
 
     
 def power_iteration(A, num_iters=100):

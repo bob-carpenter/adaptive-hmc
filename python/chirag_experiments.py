@@ -1,5 +1,5 @@
 import numpy as np
-import sys, time
+import os, sys, time
 import matplotlib.pyplot as plt
 
 from dr_hmc import DRHMC_AdaptiveStepsize, DRHMC_AdaptiveStepsize_autotune
@@ -34,6 +34,7 @@ parser.add_argument('--targetaccept', type=float, default=0.80, help='target acc
 parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
 parser.add_argument('--adapt_traj', type=int, default=1, help='adapt trajectory')
 parser.add_argument('--constant_traj', type=int, default=0, help='constant trajectory for delayed')
+parser.add_argument('--debug', type=int, default=0, help='constant trajectory for delayed')
 #arguments for path name
 parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
 
@@ -55,7 +56,17 @@ if experiment == 'rosenbrock':
     savepath = f'{savepath}/rosenbrock-{D}/'
     model, D, lp, lp_g, ref_samples, files = chirag_models.rosenbrock(D)
 
-
+if experiment == 'stochastic_volatility':
+    savepath = f'{savepath}/stochastic_volatility/'
+    model, D, lp, lp_g, ref_samples, files = chirag_models.stochastic_volatility()
+    
+if experiment == 'eight_schools_centered':
+    savepath = f'{savepath}/eight_schools_centered/'
+    model, D, lp, lp_g, ref_samples, files = chirag_models.eight_schools_centered()
+    
+if ~args.debug:
+    os.makedirs(f'{savepath}', exist_ok=True)
+    np.save(f'{savepath}/samples', ref_samples)
 ###################################
 ##### Setup the algorithm parameters
 
@@ -76,7 +87,7 @@ else:
     savepath = f"{savepath}/nleap{nleap}/"
 print(f"Saving runs in folder : {savepath}")
 
-debug = True
+debug = args.debug
 if debug:
     nsamples = 1000
     burnin = 100

@@ -76,6 +76,54 @@ def rosenbrock(D):
     ref_samples = np.load('/mnt/ceph/users/cmodi/PosteriorDB/rosenbrock/samples.npy')
     return bsmodel, D, lp, lp_g, ref_samples, [stanfile, datafile]
 
+def stochastic_volatility():
+    name = 'stochastic_volatility'
+    stanfile = f"../stan/{name}.stan" 
+    datafile = f"../stan/{name}.data.json"
+    bsmodel = bs.StanModel.from_stan_file(stanfile, datafile)
+
+    D = bsmodel.param_num()
+    lp = lambda x: bsmodel.log_density(x)
+    lp_g = lambda x: bsmodel.log_density_gradient(x)[1]
+    ref_samples = np.load(f'/mnt/ceph/users/cmodi/PosteriorDB/{name}/samples.npy')
+    return bsmodel, D, lp, lp_g, ref_samples, [stanfile, datafile]
+
+def eight_schools():
+    name = 'eight_schools'
+    stanfile = f"../stan/{name}.stan" 
+    datafile = f"../stan/{name}.data.json"
+    bsmodel = bs.StanModel.from_stan_file(stanfile, datafile)
+
+    D = bsmodel.param_num()
+    lp = lambda x: bsmodel.log_density(x)
+    lp_g = lambda x: bsmodel.log_density_gradient(x)[1]
+    ref_samples = np.load(f'/mnt/ceph/users/cmodi/PosteriorDB/{name}/samples.npy')
+    return bsmodel, D, lp, lp_g, ref_samples, [stanfile, datafile]
+
+def eight_schools_centered():
+    name = 'eight_schools_centered'
+    stanfile = f"../stan/{name}.stan" 
+    datafile = f"../stan/{name}.data.json"
+    bsmodel = bs.StanModel.from_stan_file(stanfile, datafile)
+
+    D = bsmodel.param_num()
+    lp = lambda x: bsmodel.log_density(x)
+    lp_g = lambda x: bsmodel.log_density_gradient(x)[1]
+    ref_samples = np.load(f'/mnt/ceph/users/cmodi/PosteriorDB/{name}/samples.npy')
+    return bsmodel, D, lp, lp_g, ref_samples, [stanfile, datafile]
+
+
+def irt():
+    name = 'irt'
+    stanfile = f"../stan/{name}.stan" 
+    datafile = f"../stan/{name}.data.json"
+    bsmodel = bs.StanModel.from_stan_file(stanfile, datafile)
+
+    D = bsmodel.param_num()
+    lp = lambda x: bsmodel.log_density(x)
+    lp_g = lambda x: bsmodel.log_density_gradient(x)[1]
+    ref_samples = np.load(f'/mnt/ceph/users/cmodi/PosteriorDB/{name}/samples.npy')
+    return bsmodel, D, lp, lp_g, ref_samples, [stanfile, datafile]
 
 # ### setup funnel
 # def funnel(D):
