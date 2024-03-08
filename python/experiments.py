@@ -1,4 +1,5 @@
 import u_turn_sampler as uts
+import alt_u_turn_sampler as alt_uts
 import models
 import util
 import numpy as np
@@ -58,9 +59,9 @@ def uturn_eight_schools(seed = 1234):
     print(f"Y[d]**2 standard error: {np.sqrt(sq_err_Xsq.reshape(N * D).sum() / (N * D))}")
     print(f"average mean squared jump distance: {np.mean(msq_jumps):5.1f}  ({np.std(msq_jumps):4.2f})")
     print(f"accept probability: {np.mean(accept_probs):4.2f} ({np.std(accept_probs):4.2f})")
-    print(f"average gradient calls: {np.mean(grad_calls):8.1f}") 
-    
-    
+    print(f"average gradient calls: {np.mean(grad_calls):8.1f}")
+
+
 def uturn_normal(seed = 1234):
     M = 100 * 100
     stepsize = 0.9
@@ -87,7 +88,7 @@ def uturn_normal(seed = 1234):
     print(f"Y[d]**2 standard error: {np.sqrt(sq_err_Xsq.reshape(N * D).sum() / (N * D))}")
     print(f"average mean squared jump distance: {np.mean(msq_jumps):5.1f}  ({np.std(msq_jumps):4.2f})")
     print(f"accept probability: {np.mean(accept_probs):4.2f} ({np.std(accept_probs):4.2f})")
-    print(f"average gradient calls: {np.mean(grad_calls):8.1f}") 
+    print(f"average gradient calls: {np.mean(grad_calls):8.1f}")
 
 def plot_normal(seed = 1234):
     D = 100
@@ -97,7 +98,7 @@ def plot_normal(seed = 1234):
     sampler = uts.UTurnSampler(model, stepsize = stepsize, seed = seed)
     sample = sampler.sample(M)
     print(f"E[X]: {np.mean(sample, axis=0)}")
-    print(f"E[X^2]: {np.mean(sample**2, axis=0)}")    
+    print(f"E[X^2]: {np.mean(sample**2, axis=0)}")
     df = pd.DataFrame({"x": sample[1:M, 1]})
     # cf. fully random:
     # df = pd.DataFrame({"x": np.random.randn(M)})
@@ -124,7 +125,7 @@ std_normal = {
     'data': "normal.json",
     'params': 100
 }
-    
+
 def test_model(config, M, seed = None):
     print(f"TESTING: {config=}  {M=} {seed=}")
     if seed == None:
@@ -147,7 +148,7 @@ def test_model(config, M, seed = None):
     print(f"metric: {np.mean(fit.metric, axis = 0)}")
     model2 = models.StanModel(model_path, data = data_path, seed = seed)
     stepsize = 0.5
-    seed = 12345
+    # seed = 12345
     with open(data_path, 'r') as f:
         data_dict = json.load(f)
     sampler = uts.UTurnSampler(model2, stepsize = stepsize, seed = seed)
@@ -158,8 +159,25 @@ def test_model(config, M, seed = None):
     for m in range(M):
         draws2_constr[m, :] = model2.param_constrain(draws2[m, :])
 
+    print(f"U-turn Sampler:")
     print(f"{np.shape(draws2_constr) = }")
     print(f"means: {np.mean(draws2_constr, axis=0) = }")
+    print(f"stds: {np.std(draws2_constr, ddof = 1, axis=0) = }")
+    print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
+    print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
+
+    sampler = alt_uts.AltUTurnSampler(model2, stepsize = stepsize, seed = seed)
+    draws2 = sampler.sample(M)
+    D_constr = model2.dims_constrained()
+    draws2_constr = np.empty((M, D_constr))
+
+    for m in range(M):
+        draws2_constr[m, :] = model2.param_constrain(draws2[m, :])
+
+    print(f"Alt U-turn Sampler:")
+    print(f"{np.shape(draws2_constr) = }")
+    print(f"means: {np.mean(draws2_constr, axis=0) = }")
+    print(f"stds: {np.std(draws2_constr, ddof = 1, axis=0) = }")
     print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
     print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
 
@@ -167,7 +185,7 @@ def std_normal_errors(seed, D, M, K, stepsize):
     print(f"STD NORMAL: {M=}  {D=} {K=} {stepsize=} {seed=}")
 
     config = std_normal
-    
+
     # AHMC
     model = models.StdNormal(D)
     sampler = uts.UTurnSampler(model, stepsize = stepsize, seed =  seed)
@@ -186,7 +204,7 @@ def std_normal_errors(seed, D, M, K, stepsize):
         # NUTS
         fit = model.sample(data = data_path,
                             step_size = stepsize, adapt_engaged = False, chains = 1,
-                            show_progress = False, 
+                            show_progress = False,
                             iter_sampling=M, seed = (seed * k) // 3)
         draws = fit.draws(concat_chains = True)[:, 7:(7 + config['params'])]
         errs_X_NUTS[k] = np.mean(draws, axis=0)
@@ -206,7 +224,7 @@ def std_normal_errors(seed, D, M, K, stepsize):
     print(f"(NUTS)    se[X] = {se_X_hat_NUTS:6.4f}     ESS[X] = {ESS_X_hat_NUTS:6.0f}")
     print(f"(NUTS) se[X**2] = {se_Xsq_hat_NUTS:6.4f}  ESS[X**2] = {ESS_Xsq_hat_NUTS:6.0f}")
 
-    
+
     # AHMC
     se_X_hat = errs_X.std(ddof=1)
     se_Xsq_hat = errs_Xsq.std(ddof=1)
@@ -216,21 +234,21 @@ def std_normal_errors(seed, D, M, K, stepsize):
     print(f"(AHMC) se[X**2] = {se_Xsq_hat:6.4f}  ESS[X**2] = {ESS_Xsq_hat:6.0f}")
 
 
-    
 
-M = 100 * 100
+
+M = 1000 * 1000
 stepsize = 0.5
 D = 20
-seed = 732349
+seed = np.random.default_rng().integers(0, np.iinfo(np.int32).max)
 K = 50
-std_normal_errors(seed = seed, D = D, M = M, K = K, stepsize = stepsize)
+# std_normal_errors(seed = seed, D = D, M = M, K = K, stepsize = stepsize)
 
-# test_model(std_normal, M = M, seed = s) 
+test_model(std_normal, M = M, seed = seed)
 # test_model(eight_schools, M = M, seed = s)
-    
 
-# stan_model_experiment()    
-# stan_model_experiment_b()    
+
+# stan_model_experiment()
+# stan_model_experiment_b()
 # plot_normal(647483)
-# uturn_normal(seed = 67375765)    
-# uturn_eight_schools(seed = 67375765)    
+# uturn_normal(seed = 67375765)
+# uturn_eight_schools(seed = 67375765)
