@@ -5,6 +5,16 @@ import numpy as np
 import scipy as sp
 import plotnine as pn
 import pandas as pd
+import logging
+import warnings
+import json
+import cmdstanpy as csp
+
+
+# FILTER JUNK FROM CmdStanPy and plotnine
+warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.filterwarnings( "ignore", module = "plotnine\..*" )
+csp.utils.get_logger().setLevel(logging.ERROR)
 
 def stan_model_experiment():
     model = models.StanModel('../stan/normal.stan', data = '{ "D": 5 }')
@@ -80,7 +90,7 @@ def uturn_normal(seed = 1234):
     print(f"average gradient calls: {np.mean(grad_calls):8.1f}") 
 
 def plot_normal(seed = 1234):
-    D = 5
+    D = 100
     model = models.StdNormal(D)
     stepsize = 0.5
     M = 100_000
@@ -102,13 +112,6 @@ def plot_normal(seed = 1234):
     )
     print(plot)
 
-
-import u_turn_sampler as uts
-import models
-import util
-import cmdstanpy as csp
-import numpy as np
-import json
 
 eight_schools = {
     'model': "eight-schools.stan",
@@ -134,7 +137,6 @@ def test_model(config, M, seed = None):
                            step_size = 0.5, adapt_engaged = False, chains = 4,
                            iter_sampling=2500, seed = seed)
     draws = fit.draws(concat_chains = True)[:, 7:(7 + config['params'])]
-    print(f"{np.shape(draws) = }")
     means = np.mean(draws, axis=0)
     means_sq = np.mean(draws**2, axis=0)
     print(f"{means = }")
@@ -161,15 +163,74 @@ def test_model(config, M, seed = None):
     print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
     print(f"mean sq jumps = {util.mean_sq_jump_distance(draws2_constr)}")
 
+def std_normal_errors(seed, D, M, K, stepsize):
+    print(f"STD NORMAL: {M=}  {D=} {K=} {stepsize=} {seed=}")
 
-s = 983459874
-M = 500 * 500
+    config = std_normal
+    
+    # AHMC
+    model = models.StdNormal(D)
+    sampler = uts.UTurnSampler(model, stepsize = stepsize, seed =  seed)
+    errs_X = np.empty((K, D))
+    errs_Xsq = np.empty((K, D))
+
+    # NUTS
+    prefix = "../stan/"
+    model_path = prefix + config['model']
+    data_path = prefix + config['data']  # HACK HACK HACK (not reading D!!!)
+    model = csp.CmdStanModel(stan_file = model_path)
+    errs_X_NUTS = np.empty((K, D))
+    errs_Xsq_NUTS = np.empty((K, D))
+
+    for k in range(K):
+        # NUTS
+        fit = model.sample(data = data_path,
+                            step_size = stepsize, adapt_engaged = False, chains = 1,
+                            show_progress = False, 
+                            iter_sampling=M, seed = (seed * k) // 3)
+        draws = fit.draws(concat_chains = True)[:, 7:(7 + config['params'])]
+        errs_X_NUTS[k] = np.mean(draws, axis=0)
+        errs_Xsq_NUTS[k] = np.mean(draws**2, axis=0)
+
+        # AHMC
+        print(f"    {k = } / {range(K)}")
+        sample = sampler.sample(M)
+        errs_X[k] = np.mean(sample, axis=0)
+        errs_Xsq[k] = np.mean(sample**2, axis=0) - 1
+
+    # NUTS
+    se_X_hat_NUTS = errs_X_NUTS.std(ddof=1)
+    se_Xsq_hat_NUTS = errs_Xsq_NUTS.std(ddof=1)
+    ESS_X_hat_NUTS = 1 / se_X_hat_NUTS**2
+    ESS_Xsq_hat_NUTS = 2 / se_Xsq_hat_NUTS**2
+    print(f"(NUTS)    se[X] = {se_X_hat_NUTS:6.4f}     ESS[X] = {ESS_X_hat_NUTS:6.0f}")
+    print(f"(NUTS) se[X**2] = {se_Xsq_hat_NUTS:6.4f}  ESS[X**2] = {ESS_Xsq_hat_NUTS:6.0f}")
+
+    
+    # AHMC
+    se_X_hat = errs_X.std(ddof=1)
+    se_Xsq_hat = errs_Xsq.std(ddof=1)
+    ESS_X_hat = 1 / se_X_hat**2
+    ESS_Xsq_hat = 2 / se_Xsq_hat**2
+    print(f"(AHMC)    se[X] = {se_X_hat:6.4f}     ESS[X] = {ESS_X_hat:6.0f}")
+    print(f"(AHMC) se[X**2] = {se_Xsq_hat:6.4f}  ESS[X**2] = {ESS_Xsq_hat:6.0f}")
+
+
+    
+
+M = 100 * 100
+stepsize = 0.5
+D = 20
+seed = 732349
+K = 50
+std_normal_errors(seed = seed, D = D, M = M, K = K, stepsize = stepsize)
+
 # test_model(std_normal, M = M, seed = s) 
 # test_model(eight_schools, M = M, seed = s)
     
 
 # stan_model_experiment()    
 # stan_model_experiment_b()    
-plot_normal(647483)
+# plot_normal(647483)
 # uturn_normal(seed = 67375765)    
 # uturn_eight_schools(seed = 67375765)    

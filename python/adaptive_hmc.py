@@ -59,7 +59,7 @@ class AdaptiveHmcSampler:
             self._theta = theta_prop
             self._rho = rho_prop
         return self._theta, self._rho
-
+        
     def sample(self, M):
         thetas = np.empty((M, self._model.dims()), dtype=np.float64)
         thetas[0, :] = self._theta

@@ -1,17 +1,18 @@
 data {
-  int<lower=0> J; // number of schools
-  array[J] real y; // estimated treatment
-  array[J] real<lower=0> sigma; // std of estimated effect
+  int<lower=0> J;
+  array[J] real y;
+  array[J] real<lower=0> sigma;
 }
 parameters {
-  real<lower=1e-10> tau; // hyper-parameter of sd
-  real<multiplier=10> mu; // hyper-parameter of mean
-  vector<offset = mu, multiplier=tau>[J] theta; // transformation of theta
+  real<lower=0> tau;
+  real mu;
+  vector[J] theta_std;
 }
 model {
-  theta ~ normal(mu, tau);
+  vector[J] theta = mu + tau * theta_std;
+  theta_std ~ normal(0, 1);
   y ~ normal(theta, sigma);
-  mu ~ normal(0, 5); // a non-informative prior
-  tau ~ cauchy(0, 5);
+  mu ~ normal(0, 5);
+  tau ~ normal(0, 10); // cauchy(0, 5);
 }
 

@@ -28,7 +28,7 @@ def sq_jump_dist_df(draws, sampler):
     return df, np.mean(sjds)
     
     
-def test_model(config, M, seed = None):
+def test_model(config, M, stepsize, seed = None):
     print(f"TESTING: {config=}  {M=} {seed=}")
     if seed == None:
         np.random.randint(1, 100_000)
@@ -40,7 +40,7 @@ def test_model(config, M, seed = None):
     metric_diag = {'inv_metric': np.ones(config['params'])}
     print(f"{metric_diag = }")
     fit = model.sample(data = data_path, chains = chains,
-                           show_console = True,
+                           show_console = False,
                            adapt_engaged = False,
                            metric=metric_diag,
                            step_size = 0.5,
@@ -60,11 +60,21 @@ def test_model(config, M, seed = None):
     seed = 12345
     with open(data_path, 'r') as f:
         data_dict = json.load(f)
-    sampler = uts.UTurnSampler(model2, stepsize = stepsize, seed = seed)
+    sampler = uts.UTurnBinomialSampler(model2, stepsize = stepsize, seed = seed)
     draws2 = sampler.sample(M)
     D_constr = model2.dims_constrained()
     draws2_constr = np.empty((M, D_constr))
 
+    dfNM = pd.DataFrame(np.array(sampler._NMsteps).reshape(-1, 2),
+                          columns = ['N', 'M'])
+    df_log_M_over_N = pd.DataFrame({'log(M / N)': np.log(dfNM['M'] / dfNM['N'])})
+    plotNMhist = (
+        pn.ggplot(df_log_M_over_N, pn.aes(x = 'log(M / N)'))
+        + pn.geom_histogram(color='black', fill='white', bins=51, center=0)
+        + pn.ggtitle(config['model'])
+    )
+    print(plotNMhist)
+   
     for m in range(M):
         draws2_constr[m, :] = model2.param_constrain(draws2[m, :])
 
@@ -84,10 +94,11 @@ def test_model(config, M, seed = None):
         + pn.geom_vline(pn.aes(xintercept='xintercept'), data=df_lines,
                             color="blue", size=1)
         + pn.facet_grid('sampler ~ .')
+        + pn.ggtitle(config['model'])
     )
     print(plot)
 
-s = 9834598
-M = 500 * 500
-# test_model(std_normal, M = M, seed = s) 
-test_model(eight_schools, M = M, seed = s)
+s = 848787
+M = 100 * 100
+test_model(std_normal, M = M, stepsize=0.9, seed = s, ) 
+# test_model(eight_schools, M = M, stepsize=0.5, seed=s)
