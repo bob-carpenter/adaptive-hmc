@@ -10,7 +10,6 @@ import warnings
 import json
 import cmdstanpy as csp
 
-
 # FILTER JUNK FROM CmdStanPy and plotnine
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings( "ignore", module = "plotnine\..*" )
@@ -125,10 +124,8 @@ std_normal = {
     'params': 100
 }
     
-def test_model(config, M, seed = None):
+def test_model(config, M, seed):
     print(f"TESTING: {config=}  {M=} {seed=}")
-    if seed == None:
-        seed = 1234 # np.random.randint(1, 100_000)
     prefix = "../stan/"
     model_path = prefix + config['model']
     data_path = prefix + config['data']
@@ -154,10 +151,8 @@ def test_model(config, M, seed = None):
     draws2 = sampler.sample(M)
     D_constr = model2.dims_constrained()
     draws2_constr = np.empty((M, D_constr))
-
     for m in range(M):
         draws2_constr[m, :] = model2.param_constrain(draws2[m, :])
-
     print(f"{np.shape(draws2_constr) = }")
     print(f"means: {np.mean(draws2_constr, axis=0) = }")
     print(f"means of squares: {np.mean(draws2_constr**2, axis=0) = }")
@@ -218,16 +213,16 @@ def std_normal_errors(seed, D, M, K, stepsize):
 
     
 
-M = 100 * 100
+M = 200 * 200
 stepsize = 0.5
 D = 20
-seed = 732349
+seed = 5245323
 K = 50
-std_normal_errors(seed = seed, D = D, M = M, K = K, stepsize = stepsize)
 
-# test_model(std_normal, M = M, seed = s) 
-# test_model(eight_schools, M = M, seed = s)
+test_model(std_normal, M = M, seed = seed) 
+# test_model(eight_schools, M = M, seed = seed)
     
+# std_normal_errors(seed = seed, D = D, M = M, K = K, stepsize = stepsize)
 
 # stan_model_experiment()    
 # stan_model_experiment_b()    

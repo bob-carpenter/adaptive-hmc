@@ -100,5 +100,5 @@ def test_model(config, M, stepsize, seed = None):
 
 s = 848787
 M = 100 * 100
-test_model(std_normal, M = M, stepsize=0.9, seed = s, ) 
+test_model(std_normal, M = M, stepsize=0.9, seed = s) 
 # test_model(eight_schools, M = M, stepsize=0.5, seed=s)
