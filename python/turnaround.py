@@ -26,7 +26,6 @@ class TurnaroundSampler:
         return theta2, rho2
 
     def leapfrog(self, theta, rho, numsteps):
-        theta, rho = theta.copy(), rho.copy()
         for _ in range(numsteps):
             theta, rho = self.leapfrog_step(theta, rho)
         return theta, rho
@@ -51,16 +50,16 @@ class TurnaroundSampler:
         self._rho = self._rng.normal(size=self._model.param_unc_num())
         logp = self.log_joint(self._theta, self._rho)
         N = self.uturn(self._theta, self._rho)
-        L = self._rng.integers(0, N)  # exclude final point
+        L = self._rng.integers(1, N)  # exclude final point
         theta_prop, rho_prop = self.leapfrog(self._theta, self._rho, L)
         rho_prop = -rho_prop
         logp_prop = self.log_joint(theta_prop, rho_prop)
         M = self.uturn(theta_prop, rho_prop)
         if (M < L):
             return self._theta, self._rho  # cannot balance
-        logp_out = -np.log(N)
-        logp_back = -np.log(M)
-        if np.log(self._rng.uniform()) < (logp_prop - logp) + (logp_back - logp_out):
+        logp_fwd = -np.log(N - 1)
+        logp_back = -np.log(M - 1)
+        if np.log(self._rng.uniform()) < (logp_prop - logp) + (logp_back - logp_fwd):
             self._theta = theta_prop
             self._rho = rho_prop
         return self._theta, self._rho

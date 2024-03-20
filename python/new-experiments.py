@@ -9,7 +9,7 @@ def constrain(model, draws, num_draws):
         draws_constr[m, :] = model.param_constrain(draws[m, :])
     return draws_constr
 
-def hmc_experiment(model_path, data, stepsize, num_steps, num_draws, seed):
+def turnaround_experiment(model_path, data, stepsize, num_draws, seed):
     rng = np.random.default_rng(seed)
     model = bs.StanModel(model_lib=model_path, data=data,
                              capture_stan_prints=False)
@@ -19,6 +19,6 @@ def hmc_experiment(model_path, data, stepsize, num_steps, num_draws, seed):
     print(f"MEAN(param): {np.mean(constrained_draws, axis=0)}")
     print(f"MEAN(param^2): {np.mean(constrained_draws**2, axis=0)}")
 
-hmc_experiment('../stan/normal.stan', data='{"D": 10}',
-                   stepsize=0.9, num_steps = 10, num_draws = 20000,
+turnaround_experiment('../stan/normal.stan', data='{"D": 2}',
+                   stepsize=0.5, num_draws = 2000,
                    seed=997459)    
