@@ -1,15 +1,21 @@
 import numpy as np
 
+
 class TurnaroundSampler:
+    """Adaptive HMC algorithm for selecting number of leapfrog steps.
+
+    Uniformly samples number of steps from 1 up to U-turn, flips
+    momentum, then balances with reverse proposal probability.
+    """
     def __init__(self, model, stepsize, rng):
         self._model = model
         self._stepsize = stepsize
         self._rng = rng
         self._theta = self._rng.normal(size=model.param_unc_num())
         self._rho = self._rng.normal(size=model.param_unc_num())
-        self._too_short_rejects = 0
-        self._fwds = []
-        self._bks = []
+        self._too_short_rejects = 0  # REPORTING ONLY
+        self._fwds = []              # REPORTING ONLY
+        self._bks = []               # REPORTING ONLY
 
     def __iter__(self):
         return self
@@ -65,14 +71,14 @@ class TurnaroundSampler:
         rho0 = self._rho
         L = self.uturn(theta0, rho0)
         N1 = self._rng.integers(1, L)
-        theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1) # F^(N1)(theta0, rho0)
-        rho1_star = -rho1_star # S.F^(N1)(theta0, rho0)
+        theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)  # F^(N1)(theta0, rho0)
+        rho1_star = -rho1_star                                              # S.F^(N1)(theta0, rho0)
 
         Lstar = self.uturn(theta1_star, rho1_star)
-        self._fwds.append(L)
-        self._bks.append(Lstar)
+        self._fwds.append(L)               # REPORTING ONLY
+        self._bks.append(Lstar)            # REPORTING ONLY
         if Lstar - 1 < N1:
-            self._too_short_rejects += 1
+            self._too_short_rejects += 1   # REPORTING ONLY
             return self._theta, self._rho  # unbalance-able
         
         log_alpha = ( (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - 1))

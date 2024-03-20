@@ -50,6 +50,14 @@ def histogram_vs_normal_density(xs):
     )
     return plot
 
+def num_rejects(draws):
+    num_draws = np.shape(draws)[0]
+    rejects = 0
+    for m in range(num_draws - 1):
+        if (draws[m, :] == draws[m + 1, :]).all():
+            rejects += 1
+    return rejects, rejects / num_draws
+        
 def constrain(model, draws):
     num_draws = np.shape(draws)[0]
     D = model.param_unc_num()
@@ -64,18 +72,23 @@ def turnaround_experiment(model_path, data, stepsize, num_draws, seed):
                              capture_stan_prints=False)
     sampler = ta.TurnaroundSampler(model=model, stepsize=stepsize, rng=rng)
     draws = sampler.sample(num_draws)
+    num_draws = np.shape(draws)[0]
     constrained_draws = constrain(model, draws)
     print(f"MEAN(param): {np.mean(constrained_draws, axis=0)}")
     print(f"MEAN(param^2): {np.mean(constrained_draws**2, axis=0)}")
-    draws1 = constrained_draws[: , 1]
-    # print(traceplot(draws1))
+    # scalar_draws_for_traceplot = constrained_draws[: , 0]
+    # print(traceplot(scalar_draws_for_traceplot))
     # print(histogram(sq_jumps(draws)))
-    print(f"too short rejects: {sampler._too_short_rejects} / {len(draws1)} = {sampler._too_short_rejects / len(draws1)}")
-    for n in range(50):
+    print(f"mean square jump distance: {np.mean(sq_jumps(draws))}")
+    rejects, prop_rejects = num_rejects(draws)
+    print(f"num rejects: {rejects}  proportion rejects: {prop_rejects:5.3f}")
+    print(f"too short rejects: {sampler._too_short_rejects} / {num_draws} = {sampler._too_short_rejects / num_draws}")
+    print("(forward steps to U-turn from initial,  backward steps to U-turn from proposal)")
+    for n in range(10):
         print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 turnaround_experiment('../stan/normal.stan', data='{"D": 100}',
-                   stepsize=0.9, num_draws = 10000,
+                   stepsize=0.25, num_draws = 10000,
                     seed=997459)    
 
 # turnaround_experiment('../stan/eight-schools.stan', data='../stan/eight-schools.json',
