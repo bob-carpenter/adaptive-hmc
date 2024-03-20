@@ -35,7 +35,7 @@ def uturn_eight_schools(seed = 1234):
     model = models.StanModel(file = "../stan/eight-schools.stan", data = "../stan/eight-schools.json")
     D = model.dims()
     M = 100 * 100
-    stepsize = 0.9
+    stepsize = 0.5
     N = 2
     print(f"STEP SIZE: {stepsize:4.2f}  {D = }  {N = }")
     msq_jumps = np.empty(N)

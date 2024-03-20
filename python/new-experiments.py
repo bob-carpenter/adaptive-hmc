@@ -20,5 +20,5 @@ def hmc_experiment(model_path, data, stepsize, num_steps, num_draws, seed):
     print(f"MEAN(param^2): {np.mean(constrained_draws**2, axis=0)}")
 
 hmc_experiment('../stan/normal.stan', data='{"D": 10}',
-                   stepsize=0.5, num_steps = 10, num_draws = 10000,
-                   seed=1387459)    
+                   stepsize=0.9, num_steps = 10, num_draws = 20000,
+                   seed=997459)    

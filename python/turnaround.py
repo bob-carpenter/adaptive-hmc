@@ -51,14 +51,16 @@ class TurnaroundSampler:
         self._rho = self._rng.normal(size=self._model.param_unc_num())
         logp = self.log_joint(self._theta, self._rho)
         N = self.uturn(self._theta, self._rho)
-        L = self._rng.integers(1, N - 1)  # exclude initial and final points
+        L = self._rng.integers(0, N)  # exclude final point
         theta_prop, rho_prop = self.leapfrog(self._theta, self._rho, L)
         rho_prop = -rho_prop
         logp_prop = self.log_joint(theta_prop, rho_prop)
         M = self.uturn(theta_prop, rho_prop)
-        logp_out = -np.log(N - 1)
-        logp_back = -np.log(M - 1)
-        if np.log(self._rng.uniform()) < (logp_prop - logp) + (logp_out - logp_back):
+        if (M < L):
+            return self._theta, self._rho  # cannot balance
+        logp_out = -np.log(N)
+        logp_back = -np.log(M)
+        if np.log(self._rng.uniform()) < (logp_prop - logp) + (logp_back - logp_out):
             self._theta = theta_prop
             self._rho = rho_prop
         return self._theta, self._rho
