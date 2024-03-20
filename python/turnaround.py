@@ -65,7 +65,8 @@ class TurnaroundSampler:
         return self._theta, self._rho
 
     def sample(self, M):
-        thetas = np.empty((M, self._model.param_unc_num()), dtype=np.float64)
+        D = self._model.param_unc_num()
+        thetas = np.empty((M, D), dtype=np.float64)
         thetas[0, :] = self._theta
         for m in range(1, M):
             thetas[m, :], _ = self.draw()
