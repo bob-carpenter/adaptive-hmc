@@ -1,4 +1,4 @@
-import turnaround_half as ta
+import turnaround_sym as ta
 import numpy as np
 import bridgestan as bs
 import plotnine as pn
