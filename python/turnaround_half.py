@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class TurnaroundSampler:
     """Adaptive HMC algorithm for selecting number of leapfrog steps.
 
@@ -70,6 +69,7 @@ class TurnaroundSampler:
         theta0 = self._theta
         rho0 = self._rho
         L = self.uturn(theta0, rho0)
+        # N1 = self._rng.integers(1, L)
         N1 = self._rng.integers(L // 2, L)
         theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)  # F^(N1)(theta0, rho0)
         rho1_star = -rho1_star                                              # S.F^(N1)(theta0, rho0)
@@ -77,11 +77,11 @@ class TurnaroundSampler:
         self._fwds.append(L)               # REPORTING ONLY
         self._bks.append(Lstar)            # REPORTING ONLY
         # if Lstar - 1 < N1 or Lstar // 2 > N1:
-        if not( Lstar // 2 <= N1 and N1 <= Lstar - 1):
+        if not(Lstar // 2 <= N1 and N1 <= Lstar - 1):
             self._too_short_rejects += 1   # REPORTING ONLY
             return self._theta, self._rho  # unbalance-able
-        log_alpha = ( (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - 1))
-                          - (self.log_joint(theta0, rho0) + -np.log(L - 1) ) )
+        log_alpha = (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - Lstar // 2)
+                         - (self.log_joint(theta0, rho0) + -np.log(L - L // 2)))
         if np.log(self._rng.uniform()) < log_alpha:
             self._theta = theta1_star
             self._rho = rho1_star

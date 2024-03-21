@@ -5,7 +5,6 @@ import plotnine as pn
 import pandas as pd
 
 def sq_jumps(draws):
-    M = len(draws)
     M = np.shape(draws)[0]
     result = np.empty(M - 1)
     jumps = draws[range(1, M), :] - draws[range(0, M-1), :]
@@ -83,15 +82,19 @@ def turnaround_experiment(model_path, data, stepsize, num_draws, seed):
     rejects, prop_rejects = num_rejects(draws)
     print(f"num rejects: {rejects}  proportion rejects: {prop_rejects:5.3f}")
     print(f"too short rejects: {sampler._too_short_rejects} / {num_draws} = {sampler._too_short_rejects / num_draws}")
-    print("(forward steps to U-turn from initial,  backward steps to U-turn from proposal)")
-    for n in range(10):
-        print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
+    # print("(forward steps to U-turn from initial,  backward steps to U-turn from proposal)")
+    # for n in range(10):
+    #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
-turnaround_experiment('../stan/normal.stan', data='{"D": 100}',
-                          stepsize=0.4, num_draws = 10000,
-                          seed=997459)    
+for step in [0.8, 0.4, 0.2, 0.1, 0.05]:
+    print(f"\n{step = }")
+    turnaround_experiment('../stan/normal.stan', data='{"D": 100}',
+        stepsize=step, num_draws = 10_000,
+        seed=997459)    
 
-turnaround_experiment('../stan/eight-schools.stan', data='../stan/eight-schools.json',
-                          stepsize=0.2, num_draws = 10000,
-                          seed=997459)    
+    # turnaround_experiment('../stan/eight-schools.stan', data='../stan/eight-schools.json',
+    # stepsize=step, num_draws = 10_000,
+    # seed=997459)
+
+    
 

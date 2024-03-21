@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class TurnaroundSampler:
     """Adaptive HMC algorithm for selecting number of leapfrog steps.
 
@@ -70,7 +69,7 @@ class TurnaroundSampler:
         theta0 = self._theta
         rho0 = self._rho
         L = self.uturn(theta0, rho0)
-        N1 = self._rng.integers(1, L)
+        N1 = self._rng.integers(1, L)  # samples {1, ..., (L-1)} uniformly
         theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)  # F^(N1)(theta0, rho0)
         rho1_star = -rho1_star                                              # S.F^(N1)(theta0, rho0)
 
