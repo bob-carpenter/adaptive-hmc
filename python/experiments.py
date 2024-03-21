@@ -1,4 +1,4 @@
-import turnaround as ta
+import turnaround_half as ta
 import numpy as np
 import bridgestan as bs
 import plotnine as pn
@@ -88,10 +88,10 @@ def turnaround_experiment(model_path, data, stepsize, num_draws, seed):
         print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 turnaround_experiment('../stan/normal.stan', data='{"D": 100}',
-                   stepsize=0.25, num_draws = 10000,
-                    seed=997459)    
+                          stepsize=0.4, num_draws = 10000,
+                          seed=997459)    
 
-# turnaround_experiment('../stan/eight-schools.stan', data='../stan/eight-schools.json',
-#                   stepsize=0.5, num_draws = 10000,
-#                   seed=997459)    
+turnaround_experiment('../stan/eight-schools.stan', data='../stan/eight-schools.json',
+                          stepsize=0.2, num_draws = 10000,
+                          seed=997459)    
 
