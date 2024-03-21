@@ -39,22 +39,9 @@ class TurnaroundSampler:
         return self._model.log_density(theta) - 0.5 * sum(rho**2)
 
     def uturn(self, theta, rho):
-        return self.uturn_sym(theta, rho)
+        return self.uturn_distance(theta, rho)
 
-    def uturn_sym(self, theta, rho):
-        theta_next = theta
-        rho_next = rho
-        old_distance = 0
-        N = 0
-        while True:
-            if self.uturn_distance(theta_next, -rho_next) < N + 1:
-                return N
-            theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
-            N += 1
-            distance = np.sum((theta_next - theta)**2)
-            if distance <= old_distance:
-                return N
-            old_distance = distance    
+    def
     
     def uturn_angle(self, theta, rho):
         theta_next = theta

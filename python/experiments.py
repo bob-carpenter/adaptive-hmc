@@ -1,4 +1,4 @@
-import turnaround_sym as ta
+import turnaround_half as ta
 import numpy as np
 import bridgestan as bs
 import plotnine as pn
@@ -81,7 +81,7 @@ def turnaround_experiment(model_path, data, stepsize, num_draws, seed):
     print(f"mean square jump distance: {np.mean(sq_jumps(draws))}")
     rejects, prop_rejects = num_rejects(draws)
     print(f"num rejects: {rejects}  proportion rejects: {prop_rejects:5.3f}")
-    print(f"too short rejects: {sampler._too_short_rejects} / {num_draws} = {sampler._too_short_rejects / num_draws}")
+    print(f"non overlap rejects: {sampler._too_short_rejects} / {num_draws} = {sampler._too_short_rejects / num_draws}")
     # print("(forward steps to U-turn from initial,  backward steps to U-turn from proposal)")
     # for n in range(10):
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
