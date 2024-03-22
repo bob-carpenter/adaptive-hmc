@@ -1,4 +1,4 @@
-import turnaround_half as ta
+import turnaround as ta
 import numpy as np
 import bridgestan as bs
 import plotnine as pn
@@ -65,31 +65,29 @@ def constrain(model, draws):
         draws_constr[m, :] = model.param_constrain(draws[m, :])
     return draws_constr
 
-def turnaround_experiment(model_path, data, stepsize, num_draws, seed):
+def turnaround_experiment(model, stepsize, num_draws, seed):
     rng = np.random.default_rng(seed)
-    model = bs.StanModel(model_lib=model_path, data=data,
-                             capture_stan_prints=False)
     sampler = ta.TurnaroundSampler(model=model, stepsize=stepsize, rng=rng)
-    draws = sampler.sample(num_draws)
-    num_draws = np.shape(draws)[0]
-    constrained_draws = constrain(model, draws)
-    print(f"MEAN(param): {np.mean(constrained_draws, axis=0)}")
-    print(f"MEAN(param^2): {np.mean(constrained_draws**2, axis=0)}")
+    constrained_draws = sampler.sample_constrained(num_draws)
+    # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
+    # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
     # print(traceplot(scalar_draws_for_traceplot))
     # print(histogram(sq_jumps(draws)))
-    print(f"mean square jump distance: {np.mean(sq_jumps(draws))}")
-    rejects, prop_rejects = num_rejects(draws)
-    print(f"num rejects: {rejects}  proportion rejects: {prop_rejects:5.3f}")
-    print(f"non overlap rejects: {sampler._too_short_rejects} / {num_draws} = {sampler._too_short_rejects / num_draws}")
-    # print("(forward steps to U-turn from initial,  backward steps to U-turn from proposal)")
+    print(f"Mean square jump distance: {np.mean(sq_jumps(constrained_draws)):5.1f}")
+    rejects, prop_rejects = num_rejects(constrained_draws)
+    print(f"Proportion rejects: {prop_rejects:5.3f}")
+    print(f"Cannot get back rejects: {sampler._cannot_get_back_rejects / num_draws}")
+    # print("(Forward steps to U-turn from initial, Backward steps to U-turn from proposal)")
     # for n in range(10):
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
+
+model = bs.StanModel(model_lib='../stan/normal.stan', data='{"D": 100}',
+                         capture_stan_prints=False)
 for step in [0.8, 0.4, 0.2, 0.1, 0.05]:
     print(f"\n{step = }")
-    turnaround_experiment('../stan/normal.stan', data='{"D": 100}',
-        stepsize=step, num_draws = 10_000,
+    turnaround_experiment(model = model, stepsize=step, num_draws = 10_000,
         seed=997459)    
 
     # turnaround_experiment('../stan/eight-schools.stan', data='../stan/eight-schools.json',
