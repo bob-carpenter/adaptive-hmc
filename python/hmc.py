@@ -28,7 +28,10 @@ class HmcSamplerBase:
         return theta, rho
     
     def log_joint(self, theta, rho):
-        return self._model.log_density(theta) - 0.5 * sum(rho**2)
+        try:
+            return self._model.log_density(theta) - 0.5 * sum(rho**2)
+        except ExceptionType as e:
+            return np.NINF
 
     def draw(self):
         self._rho = self._rng.normal(size=self._model.param_unc_num())

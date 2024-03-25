@@ -8,12 +8,9 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     momentum, then balances with reverse proposal probability.
     """
     def __init__(self, model, stepsize, rng,
-                     uturn_condition='distance', path_fraction='full',
-                     max_leapfrog = 512):
+                     uturn_condition='distance'):
         super().__init__(model, stepsize, rng)
         self._uturn_condition = uturn_condition
-        self._path_fraction = path_fraction
-        self._max_leapfrog_steps = max_leapfrog
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
         self._fwds = []                    # DIAGNOSTIC
         self._bks = []                     # DIAGNOSTIC
@@ -27,38 +24,36 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             return self.uturn_sym_distance(theta, rho)
         else:
             raise ValueError(f"unknown uturn condition: {self._uturn_condition}")
-       
+
     def uturn_distance(self, theta, rho):
         theta_next = theta
         rho_next = rho
         old_distance = 0
         N = 0
-        for _ in range(self._max_leapfrog_steps):
+        while True:
             theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
             N += 1
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
                 return N
             old_distance = distance
-        return self._max_leapfrog_steps
     
     def uturn_angle(self, theta, rho):
         theta_next = theta
         rho_next = rho
         N = 0
-        for _ in range(self._max_leapfrog_steps):
+        while True:
             theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
             N += 1
             if np.dot(rho, rho_next) < 0:
                 return N + 1  # N + 1 is point nearer to start
-        return self._max_leapfrog_steps
     
     def uturn_sym_distance(self, theta, rho):
         theta_next = theta
         rho_next = rho
         old_distance = 0
         N = 0
-        for _ in range(self._max_leapfrog_steps):
+        while True:
             if self.uturn_distance(theta_next, -rho_next) < N + 1:
                 return N
             theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
@@ -67,24 +62,20 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             if distance <= old_distance:
                 return N
             old_distance = distance
-        return self._max_leapfrog_steps
      
-    def lower_step_bound(self, L):
-        if self._path_fraction == 'full':
-            return 1
-        elif self._path_fraction == 'half':
-            return L // 2
-        elif self._path_fraction == 'quarter':
-            return 3 * L // 4
-        else:
-            raise ValueError(f"unknown path fraction: {self._path_fraction}")
-
     def draw(self):
         self._rho = self._rng.normal(size=self._model.param_unc_num())
         theta0 = self._theta
         rho0 = self._rho
         L = self.uturn(theta0, rho0)
-        LB = self.lower_step_bound(L)
+        lps = np.zeros(L)
+        pairs = []
+        for steps in range(L):
+            theta_star, rho_star = self.leapfrog(self._theta, self._rho, steps)
+            pairs.append((theta_star, rho_star))
+            lps[steps] = self.log_joint(theta_star, rho_star)
+        ps = np.exp(lps)
+        theta_star, rho_star = np.random.choice(a = pairs, p=ps)
         N1 = self._rng.integers(LB, L)
         theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)
         rho1_star = -rho1_star
@@ -94,7 +85,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         if not(LB <= N1 and N1 <= Lstar - 1):
             self._cannot_get_back_rejects += 1   # DIAGNOSTIC
             return self._theta, self._rho        # cannot balance w/o return
-        log_accept_prob = ( (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - 1))
+        log_accept_prob = ( (self.log_joint(theta1_star, rho1_star) + -np.log(Lstar - 1))
                           - (self.log_joint(theta0, rho0) + -np.log(L - 1) ) )
         if np.log(self._rng.uniform()) < log_accept_prob:
             self._theta = theta1_star
