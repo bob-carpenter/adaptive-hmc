@@ -80,24 +80,27 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             raise ValueError(f"unknown path fraction: {self._path_fraction}")
 
     def draw(self):
-        self._rho = self._rng.normal(size=self._model.param_unc_num())
-        theta0 = self._theta
-        rho0 = self._rho
-        L = self.uturn(theta0, rho0)
-        LB = self.lower_step_bound(L)
-        N1 = self._rng.integers(LB, L)
-        theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)
-        rho1_star = -rho1_star
-        Lstar = self.uturn(theta1_star, rho1_star)
-        self._fwds.append(L)                     # DIAGNOSTIC
-        self._bks.append(Lstar)                  # DIAGNOSTIC
-        if not(LB <= N1 and N1 <= Lstar - 1):
-            self._cannot_get_back_rejects += 1   # DIAGNOSTIC
-            return self._theta, self._rho        # cannot balance w/o return
-        log_accept_prob = ( (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - 1))
-                          - (self.log_joint(theta0, rho0) + -np.log(L - 1) ) )
-        if np.log(self._rng.uniform()) < log_accept_prob:
-            self._theta = theta1_star
-            self._rho = rho1_star
+        try:
+            self._rho = self._rng.normal(size=self._model.param_unc_num())
+            theta0 = self._theta
+            rho0 = self._rho
+            L = self.uturn(theta0, rho0)
+            LB = self.lower_step_bound(L)
+            N1 = self._rng.integers(LB, L)
+            theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)
+            rho1_star = -rho1_star
+            Lstar = self.uturn(theta1_star, rho1_star)
+            self._fwds.append(L)                     # DIAGNOSTIC
+            self._bks.append(Lstar)                  # DIAGNOSTIC
+            if not(LB <= N1 and N1 <= Lstar - 1):
+                self._cannot_get_back_rejects += 1   # DIAGNOSTIC
+                return self._theta, self._rho        # cannot balance w/o return
+            log_accept_prob = ( (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - 1))
+                            - (self.log_joint(theta0, rho0) + -np.log(L - 1) ) )
+            if np.log(self._rng.uniform()) < log_accept_prob:
+                self._theta = theta1_star
+                self._rho = rho1_star
+        except Exception as e:
+            print(f"     Divergence Exception: {e}")
         return self._theta, self._rho
 

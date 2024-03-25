@@ -11,6 +11,15 @@ def stop_griping():
     warnings.filterwarnings("ignore", message="Loading a shared object .* that has already been loaded.*")
     csp.utils.get_logger().setLevel(logging.ERROR)
 
+def flatten_dict_values(data_dict):
+    flattened_list = []
+    for value in data_dict.values():
+        if isinstance(value, (list, tuple)):
+            flattened_list.extend(value)
+        else:
+            flattened_list.append(value)
+    return nd.array(flattened_list, dtype=np.float64)
+    
 def sq_jumps(draws):
     M = np.shape(draws)[0]
     jumps = draws[range(1, M), :] - draws[range(0, M-1), :]
@@ -66,13 +75,17 @@ def nuts_adapt(program_path, data_path, seed):
                            metric="unit_e", show_console=False,
                            chains=1, iter_warmup=10_000,
                            show_progress=False)
-    print(f"NUTS ADAPTATION: stepsize={fit.step_size}")
-    print(f"  metric={fit.metric}")
+    thetas = fit.stan_variables()
+    theta_init = {name:draws[0] for name, draws in thetas.items()}
+    metric = fit.metric
+    step_size = fit.step_size
+    return theta_init, metric, step_size
+
     
-def nuts(program_path, data_path, step_size, seed):
+def nuts(program_path, data_path, inits, step_size, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, step_size=step_size, chains=1,
-                           adapt_engaged=False,
+                           inits = inits, adapt_engaged=False,
                            metric="unit_e", iter_warmup=0, iter_sampling=1_000,
                            seed = seed, show_progress=False)
     draws = fit.draws(concat_chains = True)
@@ -86,14 +99,14 @@ def nuts(program_path, data_path, step_size, seed):
     parameter_draws = draws[:, FIRST_PARAM_COLUMN:cols]
     return parameter_draws, leapfrog_steps
 
-def nuts_experiment(program_path, data, seed, step_size):
-    parameter_draws, leapfrog_steps = nuts(program_path, data, step_size, seed)
+def nuts_experiment(program_path, data, inits, seed, step_size):
+    parameter_draws, leapfrog_steps = nuts(program_path, data, inits, step_size, seed)
     print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):5.1f};  steps={leapfrog_steps=}")
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
     
 
-def turnaround_experiment(program_path, data, stepsize, num_draws,
+def turnaround_experiment(program_path, data, init, stepsize, num_draws,
                               uturn_condition, path_fraction, seed):
     model_bs = bs.StanModel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
@@ -124,26 +137,29 @@ irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.1, 0.05])
 
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.4])
 lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.01])
-model_data_steps = [irt, eight_schools, normal]
+model_data_steps = [eight_schools, normal, irt]
 
 stop_griping()
 seed=98724583
 num_draws = 100
 for program_path, data_path, step_sizes in model_data_steps:
     print(f"\nMODEL: {program_path}")
-    nuts_adapt(program_path=program_path, data_path=data_path, seed=seed),
+    nuts_draw, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed)
+    nuts_draw_flat = flattened_dict_values(nuts_draw)
+    print(f"NUTS: adapted step size = {adapted_step_size}")
     for step_size in step_sizes:
         print(f"\nSTEP SIZE = {step_size}")
         nuts_experiment(program_path=program_path, data=data_path,
-                            step_size=step_size, seed=seed)
+                        inits=nuts_draw, step_size=step_size, seed=seed)
         for uturn_condition in ['distance']:
             for path_fraction in ['full', 'half']:
                 turnaround_experiment(program_path=program_path,
-                                    data=data_path,
-                                    stepsize=step_size,
-                                    num_draws=num_draws,
-                                    uturn_condition='distance',
-                                    path_fraction=path_fraction,
-                                    seed=seed)    
+                                          data=data_path,
+                                          inits=nuts_draw,
+                                          stepsize=step_size,
+                                          num_draws=num_draws,
+                                          uturn_condition='distance',
+                                          path_fraction=path_fraction,
+                                          seed=seed)
     
 
