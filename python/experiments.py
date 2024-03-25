@@ -63,16 +63,17 @@ def constrain(model, draws):
 def nuts_adapt(program_path, data_path, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, seed=seed,
-                           chains=1, iter_warmup=4_000,
+                           metric="unit_e", show_console=False,
+                           chains=1, iter_warmup=10_000,
                            show_progress=False)
     print(f"NUTS ADAPTATION: stepsize={fit.step_size}")
     print(f"  metric={fit.metric}")
     
 def nuts(program_path, data_path, step_size, seed):
     model = csp.CmdStanModel(stan_file = program_path)
-    fit = model.sample(data = data_path, step_size=step_size,
-                           metric="unit_e", adapt_engaged=False,
-                           iter_warmup=0, iter_sampling=1_000,
+    fit = model.sample(data = data_path, step_size=step_size, chains=1,
+                           adapt_engaged=False,
+                           metric="unit_e", iter_warmup=0, iter_sampling=1_000,
                            seed = seed, show_progress=False)
     draws = fit.draws(concat_chains = True)
     cols = np.shape(draws)[1]
@@ -117,20 +118,21 @@ def turnaround_experiment(program_path, data, stepsize, num_draws,
 
 
 
-arma = ('../stan/arma11.stan', '../stan/arma.json')
-eight_schools = ('../stan/eight-schools.stan', '../stan/eight-schools.json')
-irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json')
-lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json')
-normal = ('../stan/normal.stan', '../stan/normal.json')
-model_data_pairs = [irt, lotka_volterra, eight_schools, normal, arma, irt]
+normal = ('../stan/normal.stan', '../stan/normal.json', [0.5, 0.25])
+eight_schools = ('../stan/eight-schools.stan', '../stan/eight-schools.json', [0.5, 0.25])
+irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.1, 0.05])
+
+arma = ('../stan/arma11.stan', '../stan/arma.json', [0.4])
+lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.01])
+model_data_steps = [irt, eight_schools, normal]
 
 stop_griping()
 seed=98724583
 num_draws = 100
-for program_path, data_path in model_data_pairs:
+for program_path, data_path, step_sizes in model_data_steps:
     print(f"\nMODEL: {program_path}")
     nuts_adapt(program_path=program_path, data_path=data_path, seed=seed),
-    for step_size in [0.03 * 0.18]:
+    for step_size in step_sizes:
         print(f"\nSTEP SIZE = {step_size}")
         nuts_experiment(program_path=program_path, data=data_path,
                             step_size=step_size, seed=seed)
