@@ -80,15 +80,18 @@ def nuts_adapt(program_path, data_path, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
-                           chains=1, iter_warmup=1_000,
+                           chains=1, iter_warmup=10_000, iter_sampling=100_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
     N = metadata_columns(fit)
-    theta_draw_array = fit.draws(concat_chains=True)[0, N:]
+    theta_draws = fit.draws(concat_chains=True)[:, N:]
+    theta_draw_array = theta_draws[1, :]
+    theta_hat = theta_draws.mean(axis=0)
+    theta_sq_hat = (theta_draws**2).mean(axis=0)
     metric = fit.metric
     step_size = fit.step_size
-    return theta_draw_dict, theta_draw_array, metric, step_size
+    return theta_draw_dict, theta_draw_array, theta_hat, theta_sq_hat, metric, step_size
 
     
 def nuts(program_path, data_path, inits, step_size, seed):
@@ -105,18 +108,23 @@ def nuts(program_path, data_path, inits, step_size, seed):
     LEAPFROG_COLUMN = 4
     FIRST_PARAM_COLUMN = 7
     leapfrog_steps = np.sum(draws[:, LEAPFROG_COLUMN])
-    parameter_draws = draws[:, FIRST_PARAM_COLUMN:cols]
+    parameter_draws = draws[:, FIRST_PARAM_COLUMN:]
     return parameter_draws, leapfrog_steps
 
-def nuts_experiment(program_path, data, inits, seed, step_size):
+def root_mean_square_error(theta1, theta2):
+    return np.sqrt(np.sum((theta1 - theta2)**2) / len(theta1))
+
+def nuts_experiment(program_path, data, inits, seed, theta_hat, step_size):
     parameter_draws, leapfrog_steps = nuts(program_path, data, inits, step_size, seed)
-    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):7.2f};  steps={leapfrog_steps=}")
+    theta_hat_nuts = parameter_draws.mean(axis=0)
+    rmse = root_mean_square_error(theta_hat, theta_hat_nuts)
+    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):7.2f};  steps={leapfrog_steps=};  RMSE={rmse:6.3f}")
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
     
 
 def turnaround_experiment(program_path, data, init, stepsize, num_draws,
-                              uturn_condition, path_fraction, seed):
+                              uturn_condition, path_fraction, theta_hat, seed):
     model_bs = bs.StanModel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
     rng = np.random.default_rng(seed)
@@ -129,7 +137,9 @@ def turnaround_experiment(program_path, data, init, stepsize, num_draws,
     prop_no_return = sampler._cannot_get_back_rejects / num_draws
     prop_diverge = sampler._divergences / num_draws
     msjd = np.mean(sq_jumps(constrained_draws))
-    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:7.2f};  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f}")
+    theta_hat_turnaround = constrained_draws.mean(axis=0)
+    rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
+    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:7.2f};  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  rmse={rmse:6.3f}")
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
@@ -142,6 +152,7 @@ def turnaround_experiment(program_path, data, init, stepsize, num_draws,
 
 
 normal = ('../stan/normal.stan', '../stan/normal.json', [0.5, 0.25])
+multi_normal = ('../stan/multi_normal.stan', '../stan/multi_normal.json', [0.2, 0.1])
 eight_schools = ('../stan/eight-schools.stan', '../stan/eight-schools.json', [0.5, 0.25])
 irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.05, 0.025])
 lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.018, 0.009, 0.004])
@@ -155,23 +166,23 @@ covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
 prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
 
-model_data_steps = [pkpd, hmm, gauss_mix, garch, arK, eight_schools, normal, lotka_volterra, irt]  # [covid, arma, prophet, pkpd]
+model_data_steps = [normal, multi_normal, garch, arK, eight_schools, gauss_mix, irt, lotka_volterra, pkpd, hmm]  # [covid, arma, prophet, pkpd]
 
 stop_griping()
-seed=654321
+seed=9184881
 print(f"SEED: {seed}")
 num_draws = 500
 for program_path, data_path, step_sizes in model_data_steps:
     print(f"\nMODEL: {program_path}")
     print("============================================================")
-    nuts_draw_dict, nuts_draw_array, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed)
+    nuts_draw_dict, nuts_draw_array, theta_hat, theta_sq_hat, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed)
     print(f"NUTS: adapted step size = {adapted_step_size}")
     for step_size in step_sizes:
         print(f"\nSTEP SIZE = {step_size}")
         nuts_experiment(program_path=program_path, data=data_path,
-                        inits=nuts_draw_dict, step_size=step_size, seed=seed)
-        for uturn_condition in ['distance']:
-            for path_fraction in ['full', 'half']:
+                        inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat, seed=seed)
+        for uturn_condition in ['distance', 'sym_distance']:  # 'angle'
+            for path_fraction in ['full', 'half', 'quarter']:
                 turnaround_experiment(program_path=program_path,
                                           data=data_path,
                                           init=nuts_draw_array,
@@ -179,6 +190,7 @@ for program_path, data_path, step_sizes in model_data_steps:
                                           num_draws=num_draws,
                                           uturn_condition=uturn_condition,
                                           path_fraction=path_fraction,
+                                          theta_hat=theta_hat,
                                           seed=seed)
     
 

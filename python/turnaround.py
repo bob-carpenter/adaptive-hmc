@@ -8,8 +8,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     Uniformly samples number of steps from 1 up to U-turn, flips
     momentum, then balances with reverse proposal probability.
     """
-    def __init__(self, model, stepsize, rng,
-                     uturn_condition='distance', path_fraction='full',
+    def __init__(self, model, stepsize, rng, uturn_condition, path_fraction,
                      max_leapfrog = 512):
         super().__init__(model, stepsize, rng)
         self._uturn_condition = uturn_condition
@@ -36,7 +35,11 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         old_distance = 0
         N = 0
         for _ in range(self._max_leapfrog_steps):
-            theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
+            try:
+                theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
+            except Exception as e:
+                self._divergences += 1
+                return N
             N += 1
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
@@ -61,10 +64,14 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         old_distance = 0
         N = 0
         for _ in range(self._max_leapfrog_steps):
-            if self.uturn_distance(theta_next, -rho_next) < N + 1:
-                return N
-            theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
-            N += 1
+            try:
+                if self.uturn_distance(theta_next, -rho_next) < N + 1:
+                    return N
+                theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
+                N += 1
+            except Exception as e:
+                self._divergences += 1
+                
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
                 return N
