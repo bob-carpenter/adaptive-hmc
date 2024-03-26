@@ -1,5 +1,6 @@
 import numpy as np
 import hmc
+import traceback
 
 class TurnaroundSampler(hmc.HmcSamplerBase):
     """Adaptive HMC algorithm for selecting number of leapfrog steps.
@@ -17,6 +18,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
         self._fwds = []                    # DIAGNOSTIC
         self._bks = []                     # DIAGNOSTIC
+        self._divergences = 0              # DIAGNOSTIC
 
     def uturn(self, theta, rho):
         if self._uturn_condition == 'distance':
@@ -101,6 +103,8 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
                 self._theta = theta1_star
                 self._rho = rho1_star
         except Exception as e:
-            print(f"     Divergence Exception: {e}")
+            # traceback.print_exc()
+            self._divergences += 1
+            return self._theta, self._rho
         return self._theta, self._rho
 

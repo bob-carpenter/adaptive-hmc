@@ -5,6 +5,7 @@ import bridgestan as bs
 import plotnine as pn
 import pandas as pd
 import logging
+import traceback
 import warnings
 
 def stop_griping():
@@ -14,11 +15,14 @@ def stop_griping():
 def flatten_dict_values(data_dict):
     flattened_list = []
     for value in data_dict.values():
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, (np.ndarray)):
+            flattened_list.extend(value.flatten())
+        elif isinstance(value, (list, tuple)):
             flattened_list.extend(value)
         else:
             flattened_list.append(value)
-    return nd.array(flattened_list, dtype=np.float64)
+    print(flattened_list)
+    return np.array(flattened_list)
     
 def sq_jumps(draws):
     M = np.shape(draws)[0]
@@ -69,24 +73,29 @@ def constrain(model, draws):
         draws_constr[m, :] = model.param_constrain(draws[m, :])
     return draws_constr
 
+def metadata_columns(fit):
+    return len(fit.metadata.method_vars.keys())
+
 def nuts_adapt(program_path, data_path, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
-                           chains=1, iter_warmup=10_000,
+                           chains=1, iter_warmup=1_000,
                            show_progress=False)
-    thetas = fit.stan_variables()
-    theta_init = {name:draws[0] for name, draws in thetas.items()}
+    thetas_dict = fit.stan_variables()
+    theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
+    N = metadata_columns(fit)
+    theta_draw_array = fit.draws(concat_chains=True)[0, N:]
     metric = fit.metric
     step_size = fit.step_size
-    return theta_init, metric, step_size
+    return theta_draw_dict, theta_draw_array, metric, step_size
 
     
 def nuts(program_path, data_path, inits, step_size, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, step_size=step_size, chains=1,
                            inits = inits, adapt_engaged=False,
-                           metric="unit_e", iter_warmup=0, iter_sampling=1_000,
+                           metric="unit_e", iter_warmup=0, iter_sampling=500,
                            seed = seed, show_progress=False)
     draws = fit.draws(concat_chains = True)
     cols = np.shape(draws)[1]
@@ -101,7 +110,7 @@ def nuts(program_path, data_path, inits, step_size, seed):
 
 def nuts_experiment(program_path, data, inits, seed, step_size):
     parameter_draws, leapfrog_steps = nuts(program_path, data, inits, step_size, seed)
-    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):5.1f};  steps={leapfrog_steps=}")
+    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):7.2f};  steps={leapfrog_steps=}")
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
     
@@ -118,8 +127,9 @@ def turnaround_experiment(program_path, data, init, stepsize, num_draws,
     constrained_draws = sampler.sample_constrained(num_draws)
     rejects, prop_rejects = num_rejects(constrained_draws)
     prop_no_return = sampler._cannot_get_back_rejects / num_draws
+    prop_diverge = sampler._divergences / num_draws
     msjd = np.mean(sq_jumps(constrained_draws))
-    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:5.1f};  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f}")
+    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:7.2f};  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f}")
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
@@ -133,32 +143,41 @@ def turnaround_experiment(program_path, data, init, stepsize, num_draws,
 
 normal = ('../stan/normal.stan', '../stan/normal.json', [0.5, 0.25])
 eight_schools = ('../stan/eight-schools.stan', '../stan/eight-schools.json', [0.5, 0.25])
-irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.1, 0.05])
+irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.05, 0.025])
+lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.018, 0.009, 0.004])
+arK = ('../stan/arK.stan', '../stan/arK.json', [0.01, 0.005])
+garch = ('../stan/garch11.stan', '../stan/garch.json', [0.16, 0.08])
+gauss_mix = ('../stan/low_dim_gauss_mix.stan', '../stan/low_dim_gauss_mix.json', [0.01, 0.005])
+hmm = ('../stan/hmm_example.stan', '../stan/hmm_example.json', [0.025, 0.125])
+pkpd = ('../stan/one_comp_mm_elim_abs.stan', '../stan/one_comp_mm_elim_abs.json', [0.1, 0.05])
 
-arma = ('../stan/arma11.stan', '../stan/arma.json', [0.4])
-lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.01])
-model_data_steps = [eight_schools, normal, irt]
+covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
+arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
+prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
+
+model_data_steps = [pkpd, hmm, gauss_mix, garch, arK, eight_schools, normal, lotka_volterra, irt]  # [covid, arma, prophet, pkpd]
 
 stop_griping()
-seed=98724583
-num_draws = 100
+seed=654321
+print(f"SEED: {seed}")
+num_draws = 500
 for program_path, data_path, step_sizes in model_data_steps:
     print(f"\nMODEL: {program_path}")
-    nuts_draw, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed)
-    nuts_draw_flat = flattened_dict_values(nuts_draw)
+    print("============================================================")
+    nuts_draw_dict, nuts_draw_array, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed)
     print(f"NUTS: adapted step size = {adapted_step_size}")
     for step_size in step_sizes:
         print(f"\nSTEP SIZE = {step_size}")
         nuts_experiment(program_path=program_path, data=data_path,
-                        inits=nuts_draw, step_size=step_size, seed=seed)
+                        inits=nuts_draw_dict, step_size=step_size, seed=seed)
         for uturn_condition in ['distance']:
             for path_fraction in ['full', 'half']:
                 turnaround_experiment(program_path=program_path,
                                           data=data_path,
-                                          inits=nuts_draw,
+                                          init=nuts_draw_array,
                                           stepsize=step_size,
                                           num_draws=num_draws,
-                                          uturn_condition='distance',
+                                          uturn_condition=uturn_condition,
                                           path_fraction=path_fraction,
                                           seed=seed)
     
