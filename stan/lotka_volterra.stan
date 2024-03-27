@@ -44,15 +44,3 @@ model {
     y[ : , k] ~ lognormal(log(z[ : , k]), sigma[k]);
   }
 }
-generated quantities {
-  array[2] real y_init_rep;
-  array[N, 2] real y_rep;
-  for (k in 1 : 2) {
-    y_init_rep[k] = lognormal_rng(log(z_init[k]), sigma[k]);
-    for (n in 1 : N) {
-      y_rep[n, k] = lognormal_rng(log(z[n, k]), sigma[k]);
-    }
-  }
-}
-
-

@@ -80,7 +80,8 @@ def nuts_adapt(program_path, data_path, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
-                           chains=1, iter_warmup=10_000, iter_sampling=100_000,
+                           adapt_delta=0.95,
+                           chains=1, iter_warmup=2_000, iter_sampling=40_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
@@ -94,11 +95,11 @@ def nuts_adapt(program_path, data_path, seed):
     return theta_draw_dict, theta_draw_array, theta_hat, theta_sq_hat, metric, step_size
 
     
-def nuts(program_path, data_path, inits, step_size, seed):
+def nuts(program_path, data_path, inits, step_size, draws, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, step_size=step_size, chains=1,
                            inits = inits, adapt_engaged=False,
-                           metric="unit_e", iter_warmup=0, iter_sampling=500,
+                           metric="unit_e", iter_warmup=0, iter_sampling=draws,
                            seed = seed, show_progress=False)
     draws = fit.draws(concat_chains = True)
     cols = np.shape(draws)[1]
@@ -114,8 +115,8 @@ def nuts(program_path, data_path, inits, step_size, seed):
 def root_mean_square_error(theta1, theta2):
     return np.sqrt(np.sum((theta1 - theta2)**2) / len(theta1))
 
-def nuts_experiment(program_path, data, inits, seed, theta_hat, step_size):
-    parameter_draws, leapfrog_steps = nuts(program_path, data, inits, step_size, seed)
+def nuts_experiment(program_path, data, inits, seed, theta_hat, draws, step_size):
+    parameter_draws, leapfrog_steps = nuts(program_path, data, inits, step_size, draws, seed)
     theta_hat_nuts = parameter_draws.mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_nuts)
     print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):7.2f};  steps={leapfrog_steps=};  RMSE={rmse:6.3f}")
@@ -166,31 +167,36 @@ covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
 prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
 
-model_data_steps = [normal, multi_normal, garch, arK, eight_schools, gauss_mix, irt, lotka_volterra, pkpd, hmm]  # [covid, arma, prophet, pkpd]
+model_data_steps = [normal, eight_schools, garch, arK, lotka_volterra, gauss_mix]  # [irt, multi_normal, covid, arma, prophet, pkpd]
 
 stop_griping()
-seed=9184881
-print(f"SEED: {seed}")
-num_draws = 500
+seed1 = 49876354
+seed2 = 94281984
+seed3 = 73727475
+seeds = [seed1, seed2, seed3]
+print(f"SEEDS: {seeds}")
+num_draws = 200
 for program_path, data_path, step_sizes in model_data_steps:
     print(f"\nMODEL: {program_path}")
     print("============================================================")
-    nuts_draw_dict, nuts_draw_array, theta_hat, theta_sq_hat, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed)
+    nuts_draw_dict, nuts_draw_array, theta_hat, theta_sq_hat, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed1)
     print(f"NUTS: adapted step size = {adapted_step_size}")
     for step_size in step_sizes:
         print(f"\nSTEP SIZE = {step_size}")
-        nuts_experiment(program_path=program_path, data=data_path,
-                        inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat, seed=seed)
+        for seed in seeds:
+            nuts_experiment(program_path=program_path, data=data_path,
+                                inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat, draws=num_draws, seed=seed)
         for uturn_condition in ['distance', 'sym_distance']:  # 'angle'
             for path_fraction in ['full', 'half', 'quarter']:
-                turnaround_experiment(program_path=program_path,
-                                          data=data_path,
-                                          init=nuts_draw_array,
-                                          stepsize=step_size,
-                                          num_draws=num_draws,
-                                          uturn_condition=uturn_condition,
-                                          path_fraction=path_fraction,
-                                          theta_hat=theta_hat,
-                                          seed=seed)
+                for seed in seeds:
+                    turnaround_experiment(program_path=program_path,
+                                            data=data_path,
+                                            init=nuts_draw_array,
+                                            stepsize=step_size,
+                                            num_draws=num_draws,
+                                            uturn_condition=uturn_condition,
+                                            path_fraction=path_fraction,
+                                            theta_hat=theta_hat,
+                                            seed=seed)
     
 

@@ -39,7 +39,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
                 theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
             except Exception as e:
                 self._divergences += 1
-                return N
+                return N + 1
             N += 1
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
@@ -52,10 +52,14 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         rho_next = rho
         N = 0
         for _ in range(self._max_leapfrog_steps):
-            theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
+            try:
+                theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
+            except Exception as e:
+                self._divergences += 1
+                return N + 1
             N += 1
             if np.dot(rho, rho_next) < 0:
-                return N + 1  # N + 1 is point nearer to start
+                return N + 1
         return self._max_leapfrog_steps
     
     def uturn_sym_distance(self, theta, rho):
@@ -68,10 +72,10 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
                 if self.uturn_distance(theta_next, -rho_next) < N + 1:
                     return N
                 theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
-                N += 1
             except Exception as e:
                 self._divergences += 1
-                
+                return N + 1
+            N += 1
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
                 return N
@@ -91,25 +95,29 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     def draw(self):
         try:
             self._rho = self._rng.normal(size=self._model.param_unc_num())
-            theta0 = self._theta
-            rho0 = self._rho
-            L = self.uturn(theta0, rho0)
+            theta = self._theta
+            rho = self._rho
+            L = self.uturn(theta, rho)
             LB = self.lower_step_bound(L)
-            N1 = self._rng.integers(LB, L)
-            theta1_star, rho1_star = self.leapfrog(self._theta, self._rho, N1)
-            rho1_star = -rho1_star
-            Lstar = self.uturn(theta1_star, rho1_star)
+            N = self._rng.integers(LB, L)
+            theta_star, rho_star = self.leapfrog(theta, rho, N)
+            rho_star = -rho_star
+            Lstar = self.uturn(theta_star, rho_star)
+            LBstar = self.lower_step_bound(Lstar)
             self._fwds.append(L)                     # DIAGNOSTIC
             self._bks.append(Lstar)                  # DIAGNOSTIC
-            if not(LB <= N1 and N1 <= Lstar - 1):
+            if not(LBstar <= N and N < Lstar):
                 self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return
-            log_accept_prob = ( (self.log_joint(theta1_star,rho1_star) + -np.log(Lstar - 1))
-                            - (self.log_joint(theta0, rho0) + -np.log(L - 1) ) )
+            log_accept_prob = (
+                self.log_joint(theta_star, rho_star) - np.log(Lstar - LBstar)
+                - (self.log_joint(theta, rho) - np.log(L - LB))
+            )
             if np.log(self._rng.uniform()) < log_accept_prob:
-                self._theta = theta1_star
-                self._rho = rho1_star
+                self._theta = theta_star
+                self._rho = rho_star
         except Exception as e:
+            print("shouldn't get here")
             # traceback.print_exc()
             self._divergences += 1
             return self._theta, self._rho

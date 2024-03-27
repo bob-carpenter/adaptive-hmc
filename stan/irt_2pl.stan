@@ -22,7 +22,6 @@ model {
   sigma_b ~ lognormal(0, 2);
   b ~ normal(mu_b, sigma_b);
 
-  
   for (i in 1:I) {
     y[i] ~ bernoulli_logit(a[i] * (theta - b[i]));
   }

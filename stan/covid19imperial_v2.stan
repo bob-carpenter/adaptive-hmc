@@ -100,35 +100,3 @@ model {
                                                         phi);
   }
 }
-generated quantities {
-  matrix[N2, M] prediction0 = rep_matrix(0, N2, M);
-  matrix[N2, M] E_deaths0 = rep_matrix(0, N2, M);
-  
-  {
-    matrix[N2, M] cumm_sum0 = rep_matrix(0, N2, M);
-    for (m in 1 : M) {
-      for (i in 2 : N0) {
-        cumm_sum0[i, m] = cumm_sum0[i - 1, m] + y[m];
-      }
-      prediction0[1 : N0, m] = rep_vector(y[m], N0);
-      for (i in (N0 + 1) : N2) {
-        real convolution0 = 0;
-        for (j in 1 : (i - 1)) {
-          convolution0 += prediction0[j, m] * SI[i - j];
-        }
-        cumm_sum0[i, m] = cumm_sum0[i - 1, m] + prediction0[i - 1, m];
-        prediction0[i, m] = ((pop[m] - cumm_sum0[i, m]) / pop[m]) * mu[m]
-                            * convolution0;
-      }
-      
-      E_deaths0[1, m] = uniform_rng(1e-16, 1e-15);
-      for (i in 2 : N2) {
-        for (j in 1 : (i - 1)) {
-          E_deaths0[i, m] += prediction0[j, m] * f[i - j, m] * ifr_noise[m];
-        }
-      }
-    }
-  }
-}
-
-
