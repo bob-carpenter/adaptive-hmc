@@ -29,12 +29,10 @@ parameters {
   array[2] real<lower=0> z_init; // initial population
   array[2] real<lower=0> sigma; // measurement errors
 }
-transformed parameters {
+model {
   array[N, 2] real z = integrate_ode_rk45(dz_dt, z_init, 0, ts, theta,
                                           rep_array(0.0, 0), rep_array(
                                           0, 0), 1e-5, 1e-3, 5e2);
-}
-model {
   theta[{1, 3}] ~ normal(1, 0.5);
   theta[{2, 4}] ~ normal(0.05, 0.05);
   sigma ~ lognormal(-1, 1);

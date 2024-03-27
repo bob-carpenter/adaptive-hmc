@@ -36,7 +36,6 @@ data {
   array[N_t] real C_hat;
 }
 transformed data {
-  // Comment out the next line to get the original model
   array[1] real C0 = {0.0};
   array[2] real x_r = {D, V};
   array[0] int x_i;
@@ -47,23 +46,14 @@ parameters {
   real<lower=0> V_m; // Maximum elimination rate in 1/day
   real<lower=0> sigma;
 }
-transformed parameters {
-  array[N_t, 1] real C;
-  {
-    array[3] real theta = {k_a, K_m, V_m};
-    C = integrate_ode_bdf(one_comp_mm_elim_abs, C0, t0, times, theta, x_r,
-                          x_i);
-  }
-}
 model {
-  // Priors
+  array[3] real theta = {k_a, K_m, V_m};
+  array[N_t, 1] real C
+      = integrate_ode_bdf(one_comp_mm_elim_abs, C0, t0, times, theta, x_r,
+                          x_i);
   k_a ~ cauchy(0, 1);
   K_m ~ cauchy(0, 1);
   V_m ~ cauchy(0, 1);
   sigma ~ cauchy(0, 1);
-  
-  // Likelihood
-  for (n in 1 : N_t) {
-    C_hat[n] ~ lognormal(log(C[n, 1]), sigma);
-  }
+  C_hat ~ lognormal(log(C[ , 1]), sigma);
 }
