@@ -81,7 +81,7 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            adapt_delta=0.95,
-                           chains=1, iter_warmup=2_000, iter_sampling=40_000,
+                           chains=1, iter_warmup=10_000, iter_sampling=100_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
@@ -115,17 +115,20 @@ def nuts(program_path, data_path, inits, step_size, draws, seed):
 def root_mean_square_error(theta1, theta2):
     return np.sqrt(np.sum((theta1 - theta2)**2) / len(theta1))
 
-def nuts_experiment(program_path, data, inits, seed, theta_hat, draws, step_size):
+def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, draws, step_size):
     parameter_draws, leapfrog_steps = nuts(program_path, data, inits, step_size, draws, seed)
     theta_hat_nuts = parameter_draws.mean(axis=0)
+    theta_sq_hat_nuts = (parameter_draws**2).mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_nuts)
-    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):7.2f};  steps={leapfrog_steps=};  RMSE={rmse:6.3f}")
+    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_nuts)
+    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):7.2f};  steps={leapfrog_steps=};  RMSE(theta)={rmse:6.3f};  RMSE(theta**2)={rmse_sq:7.3f}")
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
     
 
 def turnaround_experiment(program_path, data, init, stepsize, num_draws,
-                              uturn_condition, path_fraction, theta_hat, seed):
+                              uturn_condition, path_fraction, theta_hat, theta_sq_hat,
+                              seed):
     model_bs = bs.StanModel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
     rng = np.random.default_rng(seed)
@@ -139,8 +142,10 @@ def turnaround_experiment(program_path, data, init, stepsize, num_draws,
     prop_diverge = sampler._divergences / num_draws
     msjd = np.mean(sq_jumps(constrained_draws))
     theta_hat_turnaround = constrained_draws.mean(axis=0)
+    theta_sq_hat_turnaround = (constrained_draws**2).mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
-    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:7.2f};  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  rmse={rmse:6.3f}")
+    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_turnaround)
+    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:7.2f};  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:6.3f};  RMSE(theta**2)={rmse_sq:7.3f}")
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
@@ -167,15 +172,15 @@ covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
 prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
 
-model_data_steps = [normal, multi_normal, eight_schools, lotka_volterra, gauss_mix, normal, eight_schools, garch, arK, gauss_mix, irt]  # [multi_normal, covid, arma, prophet, pkpd]
+model_data_steps = [normal, multi_normal, eight_schools, garch, arK, lotka_volterra, gauss_mix, irt]  # [covid, arma, prophet, pkpd]
 
 stop_griping()
 seed1 = 49876354
 seed2 = 94281984
 seed3 = 73727475
-seeds = [seed1, seed2, seed3]
+seeds = [seed1, seed2]
 print(f"SEEDS: {seeds}")
-num_draws = 200
+num_draws = 500
 for program_path, data_path, step_sizes in model_data_steps:
     print(f"\nMODEL: {program_path}")
     print("============================================================")
@@ -185,9 +190,10 @@ for program_path, data_path, step_sizes in model_data_steps:
         print(f"\nSTEP SIZE = {step_size}")
         for seed in seeds:
             nuts_experiment(program_path=program_path, data=data_path,
-                                inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat, draws=num_draws, seed=seed)
+                                inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
+                                theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
         for uturn_condition in ['distance', 'sym_distance']:  # 'angle'
-            for path_fraction in ['full', 'half', 'quarter']:
+            for path_fraction in ['full', 'half']: # , 'quarter']:
                 for seed in seeds:
                     turnaround_experiment(program_path=program_path,
                                             data=data_path,
@@ -197,6 +203,7 @@ for program_path, data_path, step_sizes in model_data_steps:
                                             uturn_condition=uturn_condition,
                                             path_fraction=path_fraction,
                                             theta_hat=theta_hat,
+                                            theta_sq_hat=theta_sq_hat,
                                             seed=seed)
     
 
