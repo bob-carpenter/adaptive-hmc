@@ -167,7 +167,7 @@ covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
 prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
 
-model_data_steps = [lotka_volterra, gauss_mix, normal, eight_schools, garch, arK, gauss_mix, irt]  # [multi_normal, covid, arma, prophet, pkpd]
+model_data_steps = [normal, multi_normal, eight_schools, lotka_volterra, gauss_mix, normal, eight_schools, garch, arK, gauss_mix, irt]  # [multi_normal, covid, arma, prophet, pkpd]
 
 stop_griping()
 seed1 = 49876354

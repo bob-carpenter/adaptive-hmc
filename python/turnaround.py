@@ -109,16 +109,16 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             if not(LBstar <= N and N < Lstar):
                 self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return
-            log_accept_prob = (
+            log_accept = (
                 self.log_joint(theta_star, rho_star) - np.log(Lstar - LBstar)
                 - (self.log_joint(theta, rho) - np.log(L - LB))
             )
-            if np.log(self._rng.uniform()) < log_accept_prob:
+            if np.log(self._rng.uniform()) < log_accept:
                 self._theta = theta_star
                 self._rho = rho_star
         except Exception as e:
             print("shouldn't get here")
-            # traceback.print_exc()
+            traceback.print_exc()
             self._divergences += 1
             return self._theta, self._rho
         return self._theta, self._rho
