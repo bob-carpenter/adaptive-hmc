@@ -66,19 +66,19 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         theta_next = theta
         rho_next = rho
         old_distance = 0
-        N = 0
+        M = 0
         for _ in range(self._max_leapfrog_steps):
             try:
-                if self.uturn_distance(theta_next, -rho_next) < N + 1:
-                    return N
+                if self.uturn_distance(theta_next, -rho_next) < M:  # + 1
+                    return M
                 theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
             except Exception as e:
                 self._divergences += 1
-                return N + 1
-            N += 1
+                return M # ???
+            M += 1
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
-                return N
+                return M # ???
             old_distance = distance
         return self._max_leapfrog_steps
      

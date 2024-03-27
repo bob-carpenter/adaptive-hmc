@@ -81,7 +81,7 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            adapt_delta=0.95,
-                           chains=1, iter_warmup=10_000, iter_sampling=100_000,
+                           chains=1, iter_warmup=10_000, iter_sampling=10_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
@@ -172,13 +172,13 @@ covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
 prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
 
-model_data_steps = [normal, multi_normal, eight_schools, garch, arK, lotka_volterra, gauss_mix, irt]  # [covid, arma, prophet, pkpd]
+model_data_steps = [garch, arK, multi_normal, normal, eight_schools] # [normal, eight_schools, garch, arK, lotka_volterra, gauss_mix, irt]  # [covid, arma, prophet, pkpd]
 
 stop_griping()
 seed1 = 49876354
 seed2 = 94281984
 seed3 = 73727475
-seeds = [seed1, seed2]
+seeds = [seed1]
 print(f"SEEDS: {seeds}")
 num_draws = 500
 for program_path, data_path, step_sizes in model_data_steps:
@@ -192,7 +192,7 @@ for program_path, data_path, step_sizes in model_data_steps:
             nuts_experiment(program_path=program_path, data=data_path,
                                 inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
                                 theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
-        for uturn_condition in ['distance', 'sym_distance']:  # 'angle'
+        for uturn_condition in ['angle']:  # 'angle', 'sym_distance'
             for path_fraction in ['full', 'half']: # , 'quarter']:
                 for seed in seeds:
                     turnaround_experiment(program_path=program_path,
