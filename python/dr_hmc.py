@@ -489,10 +489,10 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
         if rho_next is None: rho_next = rho
         N = Noffset
         qs, ps, gs = [], [], []
-        # check if given theta/rho already break the condition
-        if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
-            print('returning at the beginning')
-            return 0
+        # # check if given theta/rho already break the condition
+        # if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
+        #     print('returning at the beginning')
+        #     return 0
 
         g_next = None
         while True:
@@ -503,8 +503,10 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
             ps.append(rho_next)
             gs.append(g_next)
             if (np.dot((theta_next - theta), rho_next) > 0) and (np.dot((theta - theta_next), -rho) > 0) and (N < self.max_nleap) :
+            #if (np.dot((theta_next - theta), rho_next) > 0)  and (N < self.max_nleap) :
                 N += 1
             else:
+                N += 1
                 return N, qs, ps, gs
 
     def step(self, q, nleap=None, step_size=None, delayed=None, offset=0.50):
@@ -519,22 +521,30 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
 
         Nuturn, qs, ps, gs = self.nuts_criterion(q, p, step_size)
         if Nuturn == 0:
-            return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0]
+            return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0], 0
 
-        Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
-        nleap = int(Npdf.rvs())  
+        #Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
+        #nleap = int(Npdf.rvs())  
+        N0, N1 = int(offset*Nuturn), Nuturn
+        nleap = self.rng.integers(N0, N1)
         #q1, p1, qvec, gvec = self.leapfrog(q, p, N=nleap+1, step_size=step_size)
         q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
         
-        Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
-        Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
+        Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
+        #Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
+        #Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
+        N0_rev, N1_rev = int(offset*Nuturn_rev), Nuturn_rev
+        steplist = [Nuturn, Nuturn_rev, nleap]
         
         log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
-        lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
+        #lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
+        lp1, lp2 =   -np.log(N1-N0), -np.log(N1_rev-N0_rev)
+        if (nleap < N0_rev) or (nleap >= N1_rev): lp2 = -np.inf
         log_prob_N = lp2 - lp1
+        mhfac = np.exp(log_prob_N)
         log_prob = log_prob + log_prob_N 
         if np.isnan(log_prob) or (q-q1).sum()==0:
-            return q, p, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0]
+            return q, p, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, 0
         else:
             u =  np.random.uniform(0., 1., size=1)
             if  np.log(u) > min(0., log_prob):
@@ -546,13 +556,13 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
                 accepted = 1
                 Hs = [H0, H1]
                     
-        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, None
+        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
 
     
     def sample(self, q, p=None,
                nsamples=100, burnin=0, step_size=0.1, nleap=10, delayed_proposals=True, 
                epsadapt=0, nleap_adapt=0, target_accept=0.65, constant_trajectory=True,
-               callback=None, verbose=False):
+               callback=None, verbose=False, seed=99):
 
         self.nsamples = nsamples
         self.burnin = burnin
@@ -562,7 +572,8 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
         self.verbose = verbose
         self.constant_trajectory = constant_trajectory
         self.nleap_dist = lambda x:  self.nleap
-
+        self.rng = np.random.default_rng(seed)
+        
         state = Sampler()
         state.steplist = []
         
@@ -757,6 +768,7 @@ class DRHMC_Adaptive(DRHMC_AdaptiveStepsize):
                callback=None, verbose=False, seed=99):
 
         np.random.seed(seed)
+        self.rng = np.random.default_rng(seed)
         self.nsamples = nsamples
         self.burnin = burnin
         self.step_size = 0.1 #step_size
