@@ -32,7 +32,7 @@ parameters {
 model {
   array[N, 2] real z = integrate_ode_rk45(dz_dt, z_init, 0, ts, theta,
                                           rep_array(0.0, 0), rep_array(
-                                          0, 0), 1e-5, 1e-3, 5e2);
+                                          0, 0), 1e-6, 1e-5, 1e4);
   theta[{1, 3}] ~ normal(1, 0.5);
   theta[{2, 4}] ~ normal(0.05, 0.05);
   sigma ~ lognormal(-1, 1);
