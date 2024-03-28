@@ -503,7 +503,6 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
             ps.append(rho_next)
             gs.append(g_next)
             if (np.dot((theta_next - theta), rho_next) > 0) and (np.dot((theta - theta_next), -rho) > 0) and (N < self.max_nleap) :
-            #if (np.dot((theta_next - theta), rho_next) > 0)  and (N < self.max_nleap) :
                 N += 1
             else:
                 N += 1
@@ -523,8 +522,6 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
         if Nuturn == 0:
             return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0], 0
 
-        #Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
-        #nleap = int(Npdf.rvs())  
         N0, N1 = int(offset*Nuturn), Nuturn
         nleap = self.rng.integers(N0, N1)
         #q1, p1, qvec, gvec = self.leapfrog(q, p, N=nleap+1, step_size=step_size)
@@ -532,12 +529,10 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
         
         Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
         #Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
-        #Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
         N0_rev, N1_rev = int(offset*Nuturn_rev), Nuturn_rev
         steplist = [Nuturn, Nuturn_rev, nleap]
         
         log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
-        #lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
         lp1, lp2 =   -np.log(N1-N0), -np.log(N1_rev-N0_rev)
         if (nleap < N0_rev) or (nleap >= N1_rev): lp2 = -np.inf
         log_prob_N = lp2 - lp1
