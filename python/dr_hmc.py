@@ -4,6 +4,14 @@ from scipy.stats import expon, beta, multivariate_normal, uniform
 
 from util import Sampler, inverse_Hessian_approx, Hessian_approx, DualAveragingStepSize, PrintException, power_iteration
 
+from hmc import HMC
+
+# Setup MPI environment
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+wrank = comm.Get_rank()
+wsize = comm.Get_size()
+
 
 def get_beta_dist(eps, epsmax, min_fac=500):
     """return a beta distribution given the mean step-size, max step-size and min step size(factor).
@@ -19,133 +27,11 @@ def get_beta_dist(eps, epsmax, min_fac=500):
 
 
 
-class DRHMC_AdaptiveStepsize():
+
+class DRHMC_AdaptiveStepsize(HMC):
 
     def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None):
-
-        self.D = D
-        self.log_prob, self.grad_log_prob = log_prob, grad_log_prob
-        self.V = lambda x : self.log_prob(x)*-1.
-
-        if mass_matrix is None: self.mass_matrix = np.eye(D)
-        else: self.mass_matrix = mass_matrix
-        self.inv_mass_matrix = np.linalg.inv(self.mass_matrix)
-        
-        self.leapcount = 0
-        self.Vgcount = 0
-        self.Hcount = 0
-
-
-    def adapt_stepsize(self, q, epsadapt, target_accept=0.65):
-        print("Adapting step size for %d iterations"%epsadapt)
-        step_size = self.step_size
-        epsadapt_kernel = DualAveragingStepSize(step_size, target_accept=target_accept)
-
-        for i in range(epsadapt+1):
-            qprev = q.copy()
-            q, p, acc, Hs, count, steplist, mhfac = self.step(q, self.nleap, step_size, delayed=False)
-            if (qprev == q).all():
-                prob = 0 
-            else:
-                prob = np.exp(Hs[0] - Hs[1])
-            if mhfac is not None:
-                prob *= mhfac
-
-            if i < epsadapt:
-                if np.isnan(prob) or np.isinf(prob): 
-                    prob = 0.
-                    continue
-                if prob > 1: prob = 1.
-                step_size, avgstepsize = epsadapt_kernel.update(prob)
-            elif i == epsadapt:
-                _, step_size = epsadapt_kernel.update(prob)
-                print("Step size fixed to : ", step_size)
-                self.step_size = step_size
-        return q
-        
-
-    def V_g(self, x):
-        self.Vgcount += 1
-        v_g = self.grad_log_prob(x)
-        return v_g *-1.
-
-    
-    def H(self, q, p, M=None):
-        self.Hcount += 1
-        Vq = self.V(q)
-        KE, _ = self.setup_KE(M)
-        Kq = KE(p)
-        return Vq + Kq
-
-
-    def setup_KE(self, M):      # This is unnecessary if we are not adapting mass matrix. 
-        if M is None:
-            M = self.mass_matrix 
-        KE =  lambda p : 0.5*np.dot(p, np.dot(M, p))
-        KE_g =  lambda p : np.dot(M, p)
-        return KE, KE_g
-        
-
-    def leapfrog(self, q, p, N, step_size, M=None, g=None):
-        self.leapcount += 1
-        
-        KE, KE_g = self.setup_KE(M)    
-        qvec, gvec = [], []
-        q0, p0 = q, p
-        g0 = g
-        try:
-            if g0 is not None:
-                g = g0
-                g0 = None
-            else:
-                g =  self.V_g(q)
-            p = p - 0.5*step_size * g
-            qvec.append(q)
-            gvec.append(g)
-            for i in range(N-1):
-                q = q + step_size * KE_g(p)
-                g = self.V_g(q)
-                p = p - step_size * g
-                qvec.append(q)
-                gvec.append(g)
-            q = q + step_size * KE_g(p)
-            g = self.V_g(q)
-            p = p - 0.5*step_size * g
-            qvec.append(q)
-            gvec.append(g)            
-            return q, p, qvec, gvec
-
-        except Exception as e:  # Sometimes nans happen. 
-            return q0, p0, qvec, gvec
-
-
-    def accept_log_prob(self, qp0, qp1, return_H=False):
-        q0, p0 = qp0
-        q1, p1 = qp1
-        H0 = self.H(q0, p0)
-        H1 = self.H(q1, p1)
-        log_prob = H0 - H1
-        if np.isnan(log_prob)  or (q0-q1).sum()==0:
-            log_prob = -np.inf
-        log_prob = min(0., log_prob)
-        if return_H is False: return log_prob
-        else: return log_prob, H0, H1
-    
-
-    def metropolis(self, qp0, qp1, M=None):
-
-        log_prob, H0, H1 = self.accept_log_prob(qp0, qp1, return_H=True)
-        q0, p0 = qp0
-        q1, p1 = qp1
-        if np.isnan(log_prob) or (q0-q1).sum()==0:
-            return q0, p0, -1, [H0, H1]
-        else:
-            u =  np.random.uniform(0., 1., size=1)
-            if  np.log(u) > min(0., log_prob):
-                return q0, p0, 0., [H0, H1]
-            else:
-                return q1, p1, 1., [H0, H1]
-            
+        super(DRHMC_AdaptiveStepsize, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
 
     def get_stepsize_dist(self, q0, p0, qvec, gvec, step_size, n_lbfgs=10, attempts=10):
 
@@ -278,7 +164,7 @@ class DRHMC_AdaptiveStepsize():
             log_prob_accept1 = -np.inf
         log_prob_accept1 = min(0, log_prob_accept1)
                     
-        if (accepted <= 0 ) & delayed:
+        if (accepted <= 0) & delayed:
             qf, pf, accepted, Hs, steplist = self.delayed_step(q, p, qvec, gvec, nleap=nleap, step_size=step_size, log_prob_accept1=log_prob_accept1)
         else:
             steplist = [0, 0, step_size]
@@ -320,163 +206,9 @@ class DRHMC_AdaptiveStepsize():
         return state
     
 
-    
-
-class DRHMC_AdaptiveStepsize_autotune(DRHMC_AdaptiveStepsize):
-
-    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=1024):
-        super(DRHMC_AdaptiveStepsize_autotune, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
-        self.min_nleap = min_nleap
-        self.max_nleap = max_nleap
-
-    def uturn(self, theta, rho, step_size): # Can be deleted as no longer used
-            theta_next = theta
-            rho_next = rho
-            last_dist = 0
-            N = 0
-            H0 = self.H(theta, rho)
-            while True:
-                theta_next, rho_next, _, _ = self.leapfrog(theta_next, rho_next, 1, step_size)
-                H1 = self.H(theta_next, rho_next)
-                prob = np.exp(H0 - H1)
-                if np.isnan(prob) or np.isinf(prob) or prob < 0.01:
-                    return N, theta # THIS NEEDS TO BE CHANGED TO RETURN 0
-                else:
-                    dist = np.sum((theta_next - theta)**2)
-                    if (dist <= last_dist) or (N > 1000):
-                        theta_new = self.metropolis([theta, rho], [theta_next, rho_next])[0]
-                        return N, theta_new
-                    last_dist = dist
-                    N += 1
-                    
-
-    def nuts_criterion(self, theta, rho, step_size):
-            theta_next = theta
-            rho_next = rho
-            last_dist = 0
-            N = 0
-            H0 = self.H(theta, rho)
-            while True:
-                theta_next, rho_next, _, _ = self.leapfrog(theta_next, rho_next, 1, step_size)
-                H1 = self.H(theta_next, rho_next)
-                prob = np.exp(H0 - H1)
-                Hs = [H0, H1]
-                if np.isnan(prob) or np.isinf(prob) or prob < 0.01:
-                    return N, theta, rho, Hs # SHOULD THIS RETURN 0?
-                else:
-                    if (np.dot((theta_next - theta), rho_next) > 0) and (np.dot((theta - theta_next), -rho) > 0) and (N < self.max_nleap) :
-                        N += 1
-                    else:
-                        theta_new = self.metropolis([theta, rho], [theta_next, rho_next])[0]
-                        return N, theta_new, rho_next, Hs
-
-
-    
-    def adapt_trajectory_length(self, q, n_adapt, target_accept):
-        
-        print("Adapting trajectory length for %d iterations"%n_adapt)
-        self.traj_array = np.empty(n_adapt)
-        nleaps, traj = [], []
-        step_size = self.step_size
-        epsadapt_kernel = DualAveragingStepSize(step_size, target_accept=target_accept)
-        
-        for i in range(n_adapt):
-            p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
-            qprev = q.copy()
-            N, q, _, Hs = self.nuts_criterion(q, p, step_size)
-            #add leapfrogs
-            N = max(N, self.min_nleap)
-            #self.nleap_array[i] = N
-            self.traj_array[i] = N * step_size
-
-            #update step size
-            if (qprev == q).all():
-                prob = 0 
-            else:
-                prob = np.exp(Hs[0] - Hs[1])
-                
-            if np.isnan(prob) or np.isinf(prob): 
-                prob = 0.
-                continue
-            if prob > 1: prob = 1.
-            step_size, avgstepsize = epsadapt_kernel.update(prob)
-
-        # construct a distribution of leap frog steps
-        self.step_size = step_size
-        self.traj_array *= 1.
-        return q
-
-
-    def nleap_jitter(self, lowp=10, midp=30, highp=50):
-
-        self.trajectory = np.percentile(self.traj_array, midp)
-        print(f'base trajectory length = {self.trajectory}' )
-
-        self.nleap_array = (self.traj_array / self.step_size).astype(int)
-        self.nleap = max(self.min_nleap, int(self.trajectory / self.step_size))
-        low = int(np.percentile(self.nleap_array, lowp))
-        high = int(np.percentile(self.nleap_array, highp))
-        print(f"Min and max number of leapfrog steps identified to be {low} and {high}")
-        if low < self.min_nleap:
-            low = self.min_nleap
-            print(f"Raise min leapfrog steps to default min_nleap = {self.min_nleap}")
-        if (high < low) or (high < self.min_nleap * 2):
-            high = self.min_nleap * 2
-            print(f"Raise min leapfrog steps to default 2 x min_nleap = {2*self.min_nleap}")
-        self.nleap_dist = lambda x : np.random.randint(low=low, high=high)
-            
-
-    def sample(self, q, p=None,
-               nsamples=100, burnin=0, step_size=0.1, nleap=10, delayed_proposals=True, 
-               epsadapt=0, nleap_adapt=0, target_accept=0.65, constant_trajectory=True,
-               callback=None, verbose=False):
-
-        self.nsamples = nsamples
-        self.burnin = burnin
-        self.step_size = step_size
-        self.nleap = nleap
-        self.delayed_proposals = delayed_proposals
-        self.verbose = verbose
-        self.constant_trajectory = constant_trajectory
-        self.nleap_dist = lambda x:  self.nleap
-
-        state = Sampler()
-        state.steplist = []
-        
-        if epsadapt:
-            q = self.adapt_stepsize(q, epsadapt//2, target_accept=target_accept) 
-            
-        if nleap_adapt:
-            q = self.adapt_trajectory_length(q, nleap_adapt, target_accept)
-            
-        if epsadapt:
-            q = self.adapt_stepsize(q, epsadapt//2)
-            
-        # setup function for jittering step size
-        if nleap_adapt:
-            self.nleap_jitter()
-        
-        for i in range(self.nsamples + self.burnin):
-            nleap = self.nleap_dist(1)
-            q, p, acc, Hs, count, steplist, mhfac = self.step(q, nleap, self.step_size)
-            state.i += 1
-            if (i > self.burnin):
-                state.accepts.append(acc)
-                state.samples.append(q)
-                state.Hs.append(Hs)
-                state.counts.append(count)
-                state.steplist.append(steplist)
-                if callback is not None: callback(state)
-
-        state.to_array()
-        
-        return state
-    
-
-
-
+##################################################
 ##################################
-class HMC_uturn(DRHMC_AdaptiveStepsize):
+class HMC_uturn(HMC):
 
     def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=512):
         super(HMC_uturn, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
@@ -484,21 +216,48 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
         self.max_nleap = max_nleap
                     
 
-    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None):
+
+    # def uturn(self, theta, rho, step_size): # Can be deleted as no longer used
+    #         theta_next = theta
+    #         rho_next = rho
+    #         last_dist = 0
+    #         N = 0
+    #         H0 = self.H(theta, rho)
+    #         while True:
+    #             theta_next, rho_next, _, _ = self.leapfrog(theta_next, rho_next, 1, step_size)
+    #             H1 = self.H(theta_next, rho_next)
+    #             prob = np.exp(H0 - H1)
+    #             if np.isnan(prob) or np.isinf(prob) or prob < 0.01:
+    #                 return N, theta # THIS NEEDS TO BE CHANGED TO RETURN 0
+    #             else:
+    #                 dist = np.sum((theta_next - theta)**2)
+    #                 if (dist <= last_dist) or (N > 1000):
+    #                     theta_new = self.metropolis([theta, rho], [theta_next, rho_next])[0]
+    #                     return N, theta_new
+    #                 last_dist = dist
+    #                 N += 1
+    
+    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=False):
         if theta_next is None: theta_next = theta
         if rho_next is None: rho_next = rho
         N = Noffset
         qs, ps, gs = [], [], []
-        # # check if given theta/rho already break the condition
-        # if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
-        #     print('returning at the beginning')
-        #     return 0
-
+        H0 = self.H(theta, rho)
         g_next = None
+        # check if given theta/rho already break the condition
+        if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
+            print('returning at the beginning')
+            return 0
+
         while True:
             theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
             g_next = gvec[-1]
             assert (theta_next == qvec[-1]).all()
+            if check_goodness:
+                H1 = self.H(theta_next, rho_next)
+                prob = np.exp(H0 - H1)
+                if np.isnan(prob) or np.isinf(prob): # or (prob < 0.01):
+                    return N, qs, ps, gs, False
             qs.append(theta_next)
             ps.append(rho_next)
             gs.append(g_next)
@@ -506,19 +265,16 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
                 N += 1
             else:
                 N += 1
-                return N, qs, ps, gs
+                return N, qs, ps, gs, True
 
-    def step(self, q, nleap=None, step_size=None, delayed=None, offset=0.50):
+            
+    def step(self, q, step_size=None, offset=0.50):
 
-        if nleap is None: nleap = self.nleap
         if step_size is None: step_size = self.step_size
-        if delayed is None: delayed = self.delayed_proposals
         self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
         
-        KE = self.setup_KE(self.mass_matrix)
         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
-
-        Nuturn, qs, ps, gs = self.nuts_criterion(q, p, step_size)
+        Nuturn, qs, ps, gs, success = self.nuts_criterion(q, p, step_size)
         if Nuturn == 0:
             return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0], 0
 
@@ -527,7 +283,7 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
         #q1, p1, qvec, gvec = self.leapfrog(q, p, N=nleap+1, step_size=step_size)
         q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
         
-        Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
+        Nuturn_rev, _, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
         #Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
         N0_rev, N1_rev = int(offset*Nuturn_rev), Nuturn_rev
         steplist = [Nuturn, Nuturn_rev, nleap]
@@ -555,18 +311,20 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
 
     
     def sample(self, q, p=None,
-               nsamples=100, burnin=0, step_size=0.1, nleap=10, delayed_proposals=True, 
-               epsadapt=0, nleap_adapt=0, target_accept=0.65, constant_trajectory=True,
+               nsamples=100, burnin=0, step_size=0.1, nleap=None, 
+               epsadapt=0, target_accept=0.65,
                callback=None, verbose=False, seed=99):
 
         self.nsamples = nsamples
         self.burnin = burnin
         self.step_size = step_size
-        self.nleap = nleap
-        self.delayed_proposals = delayed_proposals
+        self.nleap = None
+        if nleap is not None:
+            print("Nleap argument is ignored in U-turn sampler")
+        #self.delayed_proposals = delayed_proposals
         self.verbose = verbose
-        self.constant_trajectory = constant_trajectory
-        self.nleap_dist = lambda x:  self.nleap
+        #self.constant_trajectory = constant_trajectory
+        #self.nleap_dist = lambda x:  self.nleap
         self.rng = np.random.default_rng(seed)
         
         state = Sampler()
@@ -577,7 +335,8 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
             
         
         for i in range(self.nsamples + self.burnin):
-            q, p, acc, Hs, count, steplist, mhfac = self.step(q, nleap, self.step_size)
+            #q, p, acc, Hs, count, steplist, mhfac = self.step(q, nleap, self.step_size)
+            q, p, acc, Hs, count, steplist, mhfac = self.step(q, self.step_size)
             #q, p, acc, Hs, count, steplist = self.step(q) 
             state.i += 1
             if (i > self.burnin):
@@ -594,386 +353,134 @@ class HMC_uturn(DRHMC_AdaptiveStepsize):
     
 
 
+##############################################
 
-###################################################
-class DRHMC_Adaptive(DRHMC_AdaptiveStepsize):
+class DRHMC_AdaptiveStepsize_autotune(DRHMC_AdaptiveStepsize, HMC_uturn):
 
-    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=512):
-        super(DRHMC_Adaptive, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
+    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=5, max_nleap=512):
+        super(DRHMC_AdaptiveStepsize_autotune, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
         self.min_nleap = min_nleap
         self.max_nleap = max_nleap
-
-
-    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None):
-        if theta_next is None: theta_next = theta
-        if rho_next is None: rho_next = rho
-        N = Noffset
-        qs, ps, gs = [], [], []
-        # check if given theta/rho already break the condition
-        if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
-            print('returning at the beginning')
-            return 0, qs, ps, gs
-
-        g_next = None
-        while True:
-            theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
-            g_next = gvec[-1]
-            qs.append(theta_next)
-            ps.append(rho_next)
-            gs.append(g_next)
-            if (np.dot((theta_next - theta), rho_next) >= 0) and (np.dot((theta - theta_next), -rho) >= 0) and (N < self.max_nleap) :
-                N += 1
-            else:
-                return N, qs, ps, gs
-
-            
-    def delayed_step(self, q0, p0, qvec, gvec, Ns, step_size, log_prob_accept1, offset=0.5):
-        
-        verbose = self.verbose
-        if verbose: print(f"trying delayed step")
-        H0, H1 = 0., 0.
-        nleap = 49 ###THIS NEEDS TO BE RE-THOUGHT
-        #nleap = Ns[0]
-        
-        try:
-            # Estimate the Hessian given the rejected trajectory, use it to estimate step-size
-            #Npdf = uniform(offset*nuturn, (1-offset)*nuturn)
-            #nleap = int(Npdf.rvs())  
-            eps1, epsf1 = self.get_stepsize_dist(q0, p0, qvec, gvec, step_size)
-            step_size_new = epsf1.rvs(size=1)[0]
-
-            # Make the second proposal
-            if self.constant_trajectory:
-                nleap_new = int(min(nleap*step_size/step_size_new, nleap*100))
-            else:
-                nleap_new = int(nleap)
-            q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
-            vanilla_log_prob = self.accept_log_prob([q0, p0], [q1, p1])
-            
-            # Ghost trajectory for the second proposal
-            q1_ghost, p1_ghost, qvec_ghost, gvec_ghost, nleap_ghost, log_prob_accept2, Hs_ghost, Ns_ghost = self.first_step(q1, -p1, step_size)
-            
-            # Estimate Hessian and step-size distribution for ghost trajectory
-            eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
-            steplist = [eps1, eps2, step_size_new]
-            #Npdf2 = uniform(offset*Ns_ghost[0], (1-offset)*Ns_ghost[0])
-
-            # Calcualte different Hastings corrections
-            if log_prob_accept2 == 0:
-                if verbose: print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
-                #print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2, Ns, Ns_ghost, q0[0])
-                return q0, p0, 0, [H0, H1], steplist
-            else:            
-                log_prob_delayed = np.log((1-np.exp(log_prob_accept2))) - np.log((1- np.exp(log_prob_accept1)))
-            log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
-            log_prob_N = 0. #Npdf2.logpdf(nleap) - Npdf.logpdf(nleap)
-            log_prob = vanilla_log_prob + log_prob_eps + log_prob_delayed + log_prob_N
-            
-            if verbose:
-                print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
-                print("original, new step size : ", step_size, step_size_new)
-                print("max allowed step size: : ", eps1, eps2)
-                print(f"vanilla_log_prob : {vanilla_log_prob}\nlog_prob_eps : {log_prob_eps}\nlog_prob_delayed : {log_prob_delayed}\nlog_prob : {log_prob}")
-            
-            u =  np.random.uniform(0., 1., size=1)
-            if np.isnan(log_prob) or (q0-q1).sum()==0:
-                if verbose: print("reject\n")
-                return q0, p0, -1, [H0, H1], steplist
-            elif  np.log(u) > min(0., log_prob):
-                if verbose: print("reject\n")
-                return q0, p0, 0, [H0, H1], steplist
-            else: 
-                if verbose: print("accept\n")
-                return q1, p1, 2., [H0, H1], steplist
-            
-        except Exception as e:
-            PrintException()
-            print("exception : ", e)
-            return q0, p0, -1, [0, 0], [0., 0., 0.]
-
-
-        
-    def first_step(self, q, p, step_size, offset=0.5):
-
-        Nuturn, qs, ps, gs = self.nuts_criterion(q, p, step_size)
-
-        Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
-        nleap = int(Npdf.rvs())
-        if nleap == 0:
-            #print(f'nleap is 0')
-            if (qs[-1] - q).sum() == 0: print('there was no movement')
-            return q, p, [], [], 0, -np.inf, [0, 0], [0, 0]
-            #q1, p1, qvec, gvec = self.leapfrog(q, p, N=self.min_nleap, step_size=step_size)
-        
-        q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
-        
-        Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
-        #Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
-        Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
-        
-        log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
-
-        # Hastings correction for leapfrog steps
-        if nleap == 0 :
-            log_prob_N = 0
-        else:
-            lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
-            log_prob_N = lp2 - lp1
-        log_prob = log_prob + log_prob_N
-        if np.isnan(log_prob) or (q-q1).sum()==0:
-            log_prob = -np.inf
-        return q1, p1, qvec, gvec, nleap, log_prob, [H0, H1], [Nuturn, Nuturn_rev]
-    
-
-        
-    def step(self, q, nleap=None, step_size=None, delayed=None):
-
-        if nleap is None: nleap = self.nleap
-        if step_size is None: step_size = self.step_size
-        if delayed is None: delayed = self.delayed_proposals
-        self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
-        
-        KE = self.setup_KE(self.mass_matrix)
-        p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
-        
-        q1, p1, qvec, gvec, nleap, log_prob_accept1, Hs, Ns = self.first_step(q, p, step_size)
-        mhfac = np.exp(log_prob_accept1 - (Hs[0] - Hs[1]))
-        
-        log_prob_accept1 = min(0, log_prob_accept1)
-        u =  np.random.uniform(0., 1., size=1)
-        if  np.log(u) > min(0., log_prob_accept1):
-            qf, pf = q, p
-            accepted = 0
-        else:
-            qf, pf = q1, p1
-            accepted = 1
                     
-        if (accepted <= 0 ) & delayed:
-            qf, pf, accepted, Hs, steplist = self.delayed_step(q, p, qvec, gvec, Ns=Ns, step_size=step_size, log_prob_accept1=log_prob_accept1)
-        else:
-            steplist = [0, 0, step_size]
-        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
 
+    def adapt_trajectory_length(self, q, n_adapt, target_accept, check_goodness=True):
+        
+        print("Adapting trajectory length for %d iterations"%n_adapt)
+        self.traj_array = [] #np.zeros(n_adapt)
+        nleaps, traj = [], []
+        step_size = self.step_size
+        epsadapt_kernel = DualAveragingStepSize(step_size, target_accept=target_accept)
+        
+        for i in range(n_adapt):
+            
+            p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
+            qprev = q.copy()
+            H0 = self.H(q, p)
+            N, qs, ps, gs, success = self.nuts_criterion(q, p, step_size, check_goodness=check_goodness)
+            #add leapfrogs
+
+            if success:
+                #self.traj_array[i] = N * step_size
+                self.traj_array.append(N * step_size)
+            else:
+                self.traj_array.append(0.)
+            #update step size
+            # q = qs[-1]
+            # if (qprev == q).all():
+            #     prob = 0 
+            # else:
+            #     H1 = self.H(qs[-1], ps[-1])
+            #     prob = np.exp(H0 - H1)
+            #     if np.isnan(prob) or np.isinf(prob): 
+            #         prob = 0.
+            #         continue
+            # prob = min(1., prob)
+            # step_size, avgstepsize = epsadapt_kernel.update(prob)
+
+        # construct a distribution of leap frog steps
+        self.step_size = step_size
+        self.traj_array = np.array(self.traj_array) * 1.
+        return q
+
+
+    # def nleap_jitter(self, lowp=10, midp=30, highp=50):
+
+    #     self.trajectory = np.percentile(self.traj_array, midp)
+    #     print(f'base trajectory length = {self.trajectory}' )
+
+    #     self.nleap_array = (self.traj_array / self.step_size).astype(int)
+    #     self.nleap = max(self.min_nleap, int(self.trajectory / self.step_size))
+    #     low = int(np.percentile(self.nleap_array, lowp))
+    #     high = int(np.percentile(self.nleap_array, highp))
+    #     print(f"Min and max number of leapfrog steps identified to be {low} and {high}")
+    #     if low < self.min_nleap:
+    #         low = self.min_nleap
+    #         print(f"Raise min leapfrog steps to default min_nleap = {self.min_nleap}")
+    #     if (high < low) or (high < self.min_nleap * 2):
+    #         high = self.min_nleap * 2
+    #         print(f"Raise min leapfrog steps to default 2 x min_nleap = {2*self.min_nleap}")
+    #     self.nleap_dist = lambda x : np.random.randint(low=low, high=high)
+            
+    def nleap_jitter(self, lowp=25, midp=30, highp=75):
+
+        if not hasattr(self, "trajectories"):
+            l, h = np.percentile(self.traj_array, lowp), np.percentile(self.traj_array, highp)
+            trajectories = self.traj_array.copy()
+            trajectories = trajectories[trajectories > l]
+            trajectories = trajectories[trajectories < h]
+            self.trajectories = trajectories * 2/3. # Note the 2/3 factor to not make a full U-turn
+            print("average number of steps  : ", (self.trajectories/self.step_size).mean())
+            if self.trajectories.size == 0 :
+                print("error in trajectories")
+                raise
+        self.nleap_dist = lambda x: min(max(int(np.random.choice(self.trajectories, 1) / self.step_size), self.min_nleap), self.max_nleap)
+            
 
     def sample(self, q, p=None,
-               nsamples=100, burnin=0, step_size=0.1, nleap=10,
-               delayed_proposals=True, constant_trajectory=False,
-               epsadapt=0, nleap_adapt=0,
-               target_accept=0.65,
-               callback=None, verbose=False, seed=99):
-
-        np.random.seed(seed)
-        self.rng = np.random.default_rng(seed)
-        self.nsamples = nsamples
-        self.burnin = burnin
-        self.step_size = 0.1 #step_size
-        self.nleap = nleap
-        self.delayed_proposals = delayed_proposals
-        self.constant_trajectory = constant_trajectory
-        self.verbose = verbose
-        
-        state = Sampler()
-        state.steplist = []
-        
-        if epsadapt:
-            q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
-
-        for i in range(self.nsamples + self.burnin):
-            q, p, acc, Hs, count, steplist, mhfac_n = self.step(q) 
-            state.i += 1
-            if (i > self.burnin):
-                state.accepts.append(acc)
-                state.samples.append(q)
-                state.Hs.append(Hs)
-                state.counts.append(count)
-                state.steplist.append(steplist)
-                if callback is not None: callback(state)
-
-        state.to_array()
-        return state
-    
-
-    
-###################################################
-class HMC_Adaptive(DRHMC_AdaptiveStepsize):
-
-    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=512):
-        super(HMC_Adaptive, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
-        self.min_nleap = min_nleap
-        self.max_nleap = max_nleap
-
-
-    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None):
-        if theta_next is None: theta_next = theta
-        if rho_next is None: rho_next = rho
-        N = Noffset
-        qs, ps, gs = [], [], []
-        # check if given theta/rho already break the condition
-        if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
-            print('returning at the beginning')
-            return 0
-
-        g_next = None
-        while True:
-            theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
-            g_next = gvec[-1]
-            qs.append(theta_next)
-            ps.append(rho_next)
-            gs.append(g_next)
-            if (np.dot((theta_next - theta), rho_next) > 0) and (np.dot((theta - theta_next), -rho) > 0) and (N < self.max_nleap) :
-                N += 1
-            else:
-                return N, qs, ps, gs
-
-            
-    def delayed_step(self, q0, p0, qvec, gvec, nuturn, step_size, log_prob_accept1, offset=0.5, skip_first=False):
-        
-        verbose = self.verbose
-        if verbose: print(f"trying delayed step")
-        H0, H1 = 0., 0.
-        #nleap = 49 ###THIS NEEDS TO BE RE-THOUGHT
-        try:
-            # Estimate the Hessian given the rejected trajectory, use it to estimate step-size
-            Npdf = uniform(offset*nuturn, (1-offset)*nuturn)
-            nleap = int(Npdf.rvs())  
-            eps1, epsf1 = self.get_stepsize_dist(q0, p0, qvec, gvec, step_size, nleap)
-            step_size_new = epsf1.rvs(size=1)[0]
-
-            # Make the second proposal
-            if self.constant_trajectory:
-                nleap_new = int(min(nleap*step_size/step_size_new, nleap*100))
-            else:
-                nleap_new = int(nleap)
-            q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
-            vanilla_log_prob = self.accept_log_prob([q0, p0], [q1, p1])
-            
-            # Ghost trajectory for the second proposal
-            #q1_ghost, p1_ghost, qvec_ghost, gvec_ghost = self.leapfrog(q1, -p1, nleap, step_size)
-            #log_prob_accept2 = self.accept_log_prob([q1, -p1], [q1_ghost, p1_ghost])
-            q1_ghost, p1_ghost, qvec_ghost, gvec_ghost, nleap_ghost, log_prob_accept2, Hs_ghost, Ns_ghost = self.first_step(q1, -p1, step_size)
-
-            # Estimate Hessian and step-size distribution for ghost trajectory
-            eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size, nleap)
-            steplist = [eps1, eps2, step_size_new]
-            Npdf2 = uniform(offset*Ns_ghost[0], (1-offset)*Ns_ghost[0])
-            if skip_first:
-                log_prob_accept2 = -np.inf
-
-            # Calcualte different Hastings corrections
-            if log_prob_accept2 == 0:
-                if verbose: print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
-                return q0, p0, 0, [H0, H1], steplist
-            else:            
-                log_prob_delayed = np.log((1-np.exp(log_prob_accept2))) - np.log((1- np.exp(log_prob_accept1)))
-            log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
-            log_prob_N = Npdf2.logpdf(nleap) - Npdf.logpdf(nleap)
-            log_prob = vanilla_log_prob + log_prob_eps + log_prob_delayed + log_prob_N
-            
-            if verbose:
-                print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
-                print("original, new step size : ", step_size, step_size_new)
-                print("max allowed step size: : ", eps1, eps2)
-                print(f"vanilla_log_prob : {vanilla_log_prob}\nlog_prob_eps : {log_prob_eps}\nlog_prob_delayed : {log_prob_delayed}\nlog_prob : {log_prob}")
-            
-            u =  np.random.uniform(0., 1., size=1)
-            if np.isnan(log_prob) or (q0-q1).sum()==0:
-                if verbose: print("reject\n")
-                return q0, p0, -1, [H0, H1], steplist
-            elif  np.log(u) > min(0., log_prob):
-                if verbose: print("reject\n")
-                return q0, p0, 0, [H0, H1], steplist
-            else: 
-                if verbose: print("accept\n")
-                return q1, p1, 2., [H0, H1], steplist
-            
-        except Exception as e:
-            PrintException()
-            print("exception : ", e)
-            return q0, p0, -1, [0, 0], [0., 0., 0.]
-
-
-        
-    def first_step(self, q, p, step_size, offset=0.5):
-
-        Nuturn, qs, ps, gs = self.nuts_criterion(q, p, step_size)
-        if Nuturn == 0:
-            #print("Nuturn is 0")
-            return q, p, [], [], 0, -np.inf, [0, 0], [0, 0]
-
-        Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
-        nleap = int(Npdf.rvs())  
-        q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
-        
-        Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
-        Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
-        
-        log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
-        # Hastings correction for leapfrog steps
-        lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
-        log_prob_N = lp2 - lp1
-        log_prob = log_prob + log_prob_N
-        if np.isnan(log_prob) or (q-q1).sum()==0:
-            log_prob = -np.inf
-        return q1, p1, qvec, gvec, nleap, log_prob, [H0, H1], [Nuturn, Nuturn_rev]
-    
-
-        
-    def step(self, q, nleap=None, step_size=None, delayed=None, skip_first=False):
-
-        if nleap is None: nleap = self.nleap
-        if step_size is None: step_size = self.step_size
-        if delayed is None: delayed = self.delayed_proposals
-        self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
-        
-        KE = self.setup_KE(self.mass_matrix)
-        p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
-        
-        q1, p1, qvec, gvec, nleap, log_prob_accept1, Hs, Ns = self.first_step(q, p, step_size)
-        mhfac = np.exp(log_prob_accept1 - (Hs[0] - Hs[1]))
-
-        if ~skip_first:
-            log_prob_accept1 = min(0, log_prob_accept1)
-            u =  np.random.uniform(0., 1., size=1)
-            if  np.log(u) > min(0., log_prob_accept1):
-                qf, pf = q, p
-                accepted = 0
-            else:
-                qf, pf = q1, p1
-                accepted = 1
-        else:
-            accepted = 0
-            log_prob_accept1 = -np.inf
-                    
-        if (accepted <= 0 ) & delayed:
-            qf, pf, accepted, Hs, steplist = self.delayed_step(q, p, qvec, gvec, nuturn=Ns[0], step_size=step_size, log_prob_accept1=log_prob_accept1, skip_first=skip_first)
-        else:
-            steplist = [0, 0, step_size]
-        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
-
-
-    def sample(self, q, p=None,
-               nsamples=100, burnin=0, step_size=0.1, nleap=10,
-               delayed_proposals=True, constant_trajectory=False,
-               epsadapt=0, nleap_adapt=0,
-               target_accept=0.65,
+               nsamples=100, burnin=0, step_size=0.1, nleap=10, delayed_proposals=True, 
+               epsadapt=0, nleap_adapt=0, target_accept=0.65, constant_trajectory=True,
                callback=None, verbose=False):
 
         self.nsamples = nsamples
         self.burnin = burnin
-        self.step_size = 0.1 #step_size
+        self.step_size = step_size
         self.nleap = nleap
         self.delayed_proposals = delayed_proposals
-        self.constant_trajectory = constant_trajectory
         self.verbose = verbose
-        
+        self.constant_trajectory = constant_trajectory
+        self.nleap_dist = lambda x:  self.nleap
+
         state = Sampler()
         state.steplist = []
         
         if epsadapt:
-            q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
+            q = self.adapt_stepsize(q, epsadapt//2, target_accept=target_accept) 
+            
+        if nleap_adapt:
+            q = self.adapt_trajectory_length(q, nleap_adapt, target_accept)
+            comm.Barrier()
+            all_traj_array = np.zeros(len(self.traj_array) * wsize)
+            all_traj_array_tmp = comm.gather(self.traj_array, root=0)
+            if wrank == 0 :
+                all_traj_array = np.concatenate(all_traj_array_tmp)
+                print(f"Shape of trajectories in rank 0 : ", all_traj_array.shape)
+                
+            comm.Bcast(all_traj_array, root=0)
+            self.traj_array = all_traj_array*1.
+            self.traj_array = self.traj_array[ self.traj_array!=0]
+            comm.Barrier()
+            print(f"Shape of trajectories after bcast  in rank {wrank} : ", self.traj_array.shape)
 
+        if epsadapt:
+            q = self.adapt_stepsize(q, epsadapt//2)
+            
+        # setup function for jittering step size
+        if nleap_adapt:
+            self.nleap_jitter()
+        
         for i in range(self.nsamples + self.burnin):
-            q, p, acc, Hs, count, steplist, mhfac_n = self.step(q,  skip_first=True) 
+            nleap = self.nleap_dist(1)
+            q, p, acc, Hs, count, steplist, mhfac = self.step(q, nleap, self.step_size)
             state.i += 1
             if (i > self.burnin):
                 state.accepts.append(acc)
@@ -984,4 +491,379 @@ class HMC_Adaptive(DRHMC_AdaptiveStepsize):
                 if callback is not None: callback(state)
 
         state.to_array()
+        
         return state
+    
+
+
+
+
+
+# ###################################################
+# class DRHMC_Adaptive(DRHMC_AdaptiveStepsize):
+
+#     def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=512):
+#         super(DRHMC_Adaptive, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
+#         self.min_nleap = min_nleap
+#         self.max_nleap = max_nleap
+
+
+            
+#     def delayed_step(self, q0, p0, qvec, gvec, Ns, step_size, log_prob_accept1, offset=0.5):
+        
+#         verbose = self.verbose
+#         if verbose: print(f"trying delayed step")
+#         H0, H1 = 0., 0.
+#         nleap = 49 ###THIS NEEDS TO BE RE-THOUGHT
+#         #nleap = Ns[0]
+        
+#         try:
+#             # Estimate the Hessian given the rejected trajectory, use it to estimate step-size
+#             #Npdf = uniform(offset*nuturn, (1-offset)*nuturn)
+#             #nleap = int(Npdf.rvs())  
+#             eps1, epsf1 = self.get_stepsize_dist(q0, p0, qvec, gvec, step_size)
+#             step_size_new = epsf1.rvs(size=1)[0]
+
+#             # Make the second proposal
+#             if self.constant_trajectory:
+#                 nleap_new = int(min(nleap*step_size/step_size_new, nleap*100))
+#             else:
+#                 nleap_new = int(nleap)
+#             q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
+#             vanilla_log_prob = self.accept_log_prob([q0, p0], [q1, p1])
+            
+#             # Ghost trajectory for the second proposal
+#             q1_ghost, p1_ghost, qvec_ghost, gvec_ghost, nleap_ghost, log_prob_accept2, Hs_ghost, Ns_ghost = self.first_step(q1, -p1, step_size)
+            
+#             # Estimate Hessian and step-size distribution for ghost trajectory
+#             eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
+#             steplist = [eps1, eps2, step_size_new]
+#             #Npdf2 = uniform(offset*Ns_ghost[0], (1-offset)*Ns_ghost[0])
+
+#             # Calcualte different Hastings corrections
+#             if log_prob_accept2 == 0:
+#                 if verbose: print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
+#                 #print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2, Ns, Ns_ghost, q0[0])
+#                 return q0, p0, 0, [H0, H1], steplist
+#             else:            
+#                 log_prob_delayed = np.log((1-np.exp(log_prob_accept2))) - np.log((1- np.exp(log_prob_accept1)))
+#             log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
+#             log_prob_N = 0. #Npdf2.logpdf(nleap) - Npdf.logpdf(nleap)
+#             log_prob = vanilla_log_prob + log_prob_eps + log_prob_delayed + log_prob_N
+            
+#             if verbose:
+#                 print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
+#                 print("original, new step size : ", step_size, step_size_new)
+#                 print("max allowed step size: : ", eps1, eps2)
+#                 print(f"vanilla_log_prob : {vanilla_log_prob}\nlog_prob_eps : {log_prob_eps}\nlog_prob_delayed : {log_prob_delayed}\nlog_prob : {log_prob}")
+            
+#             u =  np.random.uniform(0., 1., size=1)
+#             if np.isnan(log_prob) or (q0-q1).sum()==0:
+#                 if verbose: print("reject\n")
+#                 return q0, p0, -1, [H0, H1], steplist
+#             elif  np.log(u) > min(0., log_prob):
+#                 if verbose: print("reject\n")
+#                 return q0, p0, 0, [H0, H1], steplist
+#             else: 
+#                 if verbose: print("accept\n")
+#                 return q1, p1, 2., [H0, H1], steplist
+            
+#         except Exception as e:
+#             PrintException()
+#             print("exception : ", e)
+#             return q0, p0, -1, [0, 0], [0., 0., 0.]
+
+
+        
+#     def first_step(self, q, p, step_size, offset=0.5):
+
+#         Nuturn, qs, ps, gs = self.nuts_criterion(q, p, step_size)
+
+#         Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
+#         nleap = int(Npdf.rvs())
+#         if nleap == 0:
+#             #print(f'nleap is 0')
+#             if (qs[-1] - q).sum() == 0: print('there was no movement')
+#             return q, p, [], [], 0, -np.inf, [0, 0], [0, 0]
+#             #q1, p1, qvec, gvec = self.leapfrog(q, p, N=self.min_nleap, step_size=step_size)
+        
+#         q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
+        
+#         Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
+#         #Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
+#         Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
+        
+#         log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
+
+#         # Hastings correction for leapfrog steps
+#         if nleap == 0 :
+#             log_prob_N = 0
+#         else:
+#             lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
+#             log_prob_N = lp2 - lp1
+#         log_prob = log_prob + log_prob_N
+#         if np.isnan(log_prob) or (q-q1).sum()==0:
+#             log_prob = -np.inf
+#         return q1, p1, qvec, gvec, nleap, log_prob, [H0, H1], [Nuturn, Nuturn_rev]
+    
+
+        
+#     def step(self, q, nleap=None, step_size=None, delayed=None):
+
+#         if nleap is None: nleap = self.nleap
+#         if step_size is None: step_size = self.step_size
+#         if delayed is None: delayed = self.delayed_proposals
+#         self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
+        
+#         KE = self.setup_KE(self.mass_matrix)
+#         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
+        
+#         q1, p1, qvec, gvec, nleap, log_prob_accept1, Hs, Ns = self.first_step(q, p, step_size)
+#         mhfac = np.exp(log_prob_accept1 - (Hs[0] - Hs[1]))
+        
+#         log_prob_accept1 = min(0, log_prob_accept1)
+#         u =  np.random.uniform(0., 1., size=1)
+#         if  np.log(u) > min(0., log_prob_accept1):
+#             qf, pf = q, p
+#             accepted = 0
+#         else:
+#             qf, pf = q1, p1
+#             accepted = 1
+                    
+#         if (accepted <= 0 ) & delayed:
+#             qf, pf, accepted, Hs, steplist = self.delayed_step(q, p, qvec, gvec, Ns=Ns, step_size=step_size, log_prob_accept1=log_prob_accept1)
+#         else:
+#             steplist = [0, 0, step_size]
+#         return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
+
+
+#     def sample(self, q, p=None,
+#                nsamples=100, burnin=0, step_size=0.1, nleap=10,
+#                delayed_proposals=True, constant_trajectory=False,
+#                epsadapt=0, nleap_adapt=0,
+#                target_accept=0.65,
+#                callback=None, verbose=False, seed=99):
+
+#         np.random.seed(seed)
+#         self.rng = np.random.default_rng(seed)
+#         self.nsamples = nsamples
+#         self.burnin = burnin
+#         self.step_size = 0.1 #step_size
+#         self.nleap = nleap
+#         self.delayed_proposals = delayed_proposals
+#         self.constant_trajectory = constant_trajectory
+#         self.verbose = verbose
+        
+#         state = Sampler()
+#         state.steplist = []
+        
+#         if epsadapt:
+#             q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
+
+#         for i in range(self.nsamples + self.burnin):
+#             q, p, acc, Hs, count, steplist, mhfac_n = self.step(q) 
+#             state.i += 1
+#             if (i > self.burnin):
+#                 state.accepts.append(acc)
+#                 state.samples.append(q)
+#                 state.Hs.append(Hs)
+#                 state.counts.append(count)
+#                 state.steplist.append(steplist)
+#                 if callback is not None: callback(state)
+
+#         state.to_array()
+#         return state
+    
+
+    
+# ###################################################
+# class HMC_Adaptive(DRHMC_AdaptiveStepsize):
+
+#     def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=512):
+#         super(HMC_Adaptive, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
+#         self.min_nleap = min_nleap
+#         self.max_nleap = max_nleap
+
+
+#     def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None):
+#         if theta_next is None: theta_next = theta
+#         if rho_next is None: rho_next = rho
+#         N = Noffset
+#         qs, ps, gs = [], [], []
+#         # check if given theta/rho already break the condition
+#         if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
+#             print('returning at the beginning')
+#             return 0
+
+#         g_next = None
+#         while True:
+#             theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
+#             g_next = gvec[-1]
+#             qs.append(theta_next)
+#             ps.append(rho_next)
+#             gs.append(g_next)
+#             if (np.dot((theta_next - theta), rho_next) > 0) and (np.dot((theta - theta_next), -rho) > 0) and (N < self.max_nleap) :
+#                 N += 1
+#             else:
+#                 return N, qs, ps, gs
+
+            
+#     def delayed_step(self, q0, p0, qvec, gvec, nuturn, step_size, log_prob_accept1, offset=0.5, skip_first=False):
+        
+#         verbose = self.verbose
+#         if verbose: print(f"trying delayed step")
+#         H0, H1 = 0., 0.
+#         #nleap = 49 ###THIS NEEDS TO BE RE-THOUGHT
+#         try:
+#             # Estimate the Hessian given the rejected trajectory, use it to estimate step-size
+#             Npdf = uniform(offset*nuturn, (1-offset)*nuturn)
+#             nleap = int(Npdf.rvs())  
+#             eps1, epsf1 = self.get_stepsize_dist(q0, p0, qvec, gvec, step_size, nleap)
+#             step_size_new = epsf1.rvs(size=1)[0]
+
+#             # Make the second proposal
+#             if self.constant_trajectory:
+#                 nleap_new = int(min(nleap*step_size/step_size_new, nleap*100))
+#             else:
+#                 nleap_new = int(nleap)
+#             q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
+#             vanilla_log_prob = self.accept_log_prob([q0, p0], [q1, p1])
+            
+#             # Ghost trajectory for the second proposal
+#             #q1_ghost, p1_ghost, qvec_ghost, gvec_ghost = self.leapfrog(q1, -p1, nleap, step_size)
+#             #log_prob_accept2 = self.accept_log_prob([q1, -p1], [q1_ghost, p1_ghost])
+#             q1_ghost, p1_ghost, qvec_ghost, gvec_ghost, nleap_ghost, log_prob_accept2, Hs_ghost, Ns_ghost = self.first_step(q1, -p1, step_size)
+
+#             # Estimate Hessian and step-size distribution for ghost trajectory
+#             eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size, nleap)
+#             steplist = [eps1, eps2, step_size_new]
+#             Npdf2 = uniform(offset*Ns_ghost[0], (1-offset)*Ns_ghost[0])
+#             if skip_first:
+#                 log_prob_accept2 = -np.inf
+
+#             # Calcualte different Hastings corrections
+#             if log_prob_accept2 == 0:
+#                 if verbose: print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
+#                 return q0, p0, 0, [H0, H1], steplist
+#             else:            
+#                 log_prob_delayed = np.log((1-np.exp(log_prob_accept2))) - np.log((1- np.exp(log_prob_accept1)))
+#             log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
+#             log_prob_N = Npdf2.logpdf(nleap) - Npdf.logpdf(nleap)
+#             log_prob = vanilla_log_prob + log_prob_eps + log_prob_delayed + log_prob_N
+            
+#             if verbose:
+#                 print("first and ghost accept probs: ", log_prob_accept1, log_prob_accept2)
+#                 print("original, new step size : ", step_size, step_size_new)
+#                 print("max allowed step size: : ", eps1, eps2)
+#                 print(f"vanilla_log_prob : {vanilla_log_prob}\nlog_prob_eps : {log_prob_eps}\nlog_prob_delayed : {log_prob_delayed}\nlog_prob : {log_prob}")
+            
+#             u =  np.random.uniform(0., 1., size=1)
+#             if np.isnan(log_prob) or (q0-q1).sum()==0:
+#                 if verbose: print("reject\n")
+#                 return q0, p0, -1, [H0, H1], steplist
+#             elif  np.log(u) > min(0., log_prob):
+#                 if verbose: print("reject\n")
+#                 return q0, p0, 0, [H0, H1], steplist
+#             else: 
+#                 if verbose: print("accept\n")
+#                 return q1, p1, 2., [H0, H1], steplist
+            
+#         except Exception as e:
+#             PrintException()
+#             print("exception : ", e)
+#             return q0, p0, -1, [0, 0], [0., 0., 0.]
+
+
+        
+#     def first_step(self, q, p, step_size, offset=0.5):
+
+#         Nuturn, qs, ps, gs = self.nuts_criterion(q, p, step_size)
+#         if Nuturn == 0:
+#             #print("Nuturn is 0")
+#             return q, p, [], [], 0, -np.inf, [0, 0], [0, 0]
+
+#         Npdf = uniform(offset*Nuturn, (1-offset)*Nuturn)
+#         nleap = int(Npdf.rvs())  
+#         q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
+        
+#         Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
+#         Npdf_rev = uniform(offset*Nuturn_rev, (1-offset)*Nuturn_rev)
+        
+#         log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
+#         # Hastings correction for leapfrog steps
+#         lp1, lp2 =   Npdf.logpdf(nleap), Npdf_rev.logpdf(nleap)
+#         log_prob_N = lp2 - lp1
+#         log_prob = log_prob + log_prob_N
+#         if np.isnan(log_prob) or (q-q1).sum()==0:
+#             log_prob = -np.inf
+#         return q1, p1, qvec, gvec, nleap, log_prob, [H0, H1], [Nuturn, Nuturn_rev]
+    
+
+        
+#     def step(self, q, nleap=None, step_size=None, delayed=None, skip_first=False):
+
+#         if nleap is None: nleap = self.nleap
+#         if step_size is None: step_size = self.step_size
+#         if delayed is None: delayed = self.delayed_proposals
+#         self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
+        
+#         KE = self.setup_KE(self.mass_matrix)
+#         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
+        
+#         q1, p1, qvec, gvec, nleap, log_prob_accept1, Hs, Ns = self.first_step(q, p, step_size)
+#         mhfac = np.exp(log_prob_accept1 - (Hs[0] - Hs[1]))
+
+#         if ~skip_first:
+#             log_prob_accept1 = min(0, log_prob_accept1)
+#             u =  np.random.uniform(0., 1., size=1)
+#             if  np.log(u) > min(0., log_prob_accept1):
+#                 qf, pf = q, p
+#                 accepted = 0
+#             else:
+#                 qf, pf = q1, p1
+#                 accepted = 1
+#         else:
+#             accepted = 0
+#             log_prob_accept1 = -np.inf
+                    
+#         if (accepted <= 0 ) & delayed:
+#             qf, pf, accepted, Hs, steplist = self.delayed_step(q, p, qvec, gvec, nuturn=Ns[0], step_size=step_size, log_prob_accept1=log_prob_accept1, skip_first=skip_first)
+#         else:
+#             steplist = [0, 0, step_size]
+#         return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
+
+
+#     def sample(self, q, p=None,
+#                nsamples=100, burnin=0, step_size=0.1, nleap=10,
+#                delayed_proposals=True, constant_trajectory=False,
+#                epsadapt=0, nleap_adapt=0,
+#                target_accept=0.65,
+#                callback=None, verbose=False):
+
+#         self.nsamples = nsamples
+#         self.burnin = burnin
+#         self.step_size = 0.1 #step_size
+#         self.nleap = nleap
+#         self.delayed_proposals = delayed_proposals
+#         self.constant_trajectory = constant_trajectory
+#         self.verbose = verbose
+        
+#         state = Sampler()
+#         state.steplist = []
+        
+#         if epsadapt:
+#             q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
+
+#         for i in range(self.nsamples + self.burnin):
+#             q, p, acc, Hs, count, steplist, mhfac_n = self.step(q,  skip_first=True) 
+#             state.i += 1
+#             if (i > self.burnin):
+#                 state.accepts.append(acc)
+#                 state.samples.append(q)
+#                 state.Hs.append(Hs)
+#                 state.counts.append(count)
+#                 state.steplist.append(steplist)
+#                 if callback is not None: callback(state)
+
+#         state.to_array()
+#         return state
