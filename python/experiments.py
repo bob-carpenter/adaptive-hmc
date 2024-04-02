@@ -81,7 +81,7 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            # adapt_delta=0.95,
-                           chains=1, iter_warmup=2_000, iter_sampling=2_000,
+                           chains=1, iter_warmup=10_000, iter_sampling=10_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
@@ -126,14 +126,15 @@ def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, dr
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
     
 
-def turnaround_experiment(program_path, data, init, stepsize, num_draws,
+def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
                               uturn_condition, path_fraction, theta_hat, theta_sq_hat,
                               seed):
     model_bs = bs.StanModel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
     rng = np.random.default_rng(seed)
+    theta = model_bs.param_unconstrain(theta_unc)
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
-                              rng=rng,
+                                       theta=theta, rng=rng,
                               uturn_condition=uturn_condition,
                               path_fraction=path_fraction)
     constrained_draws = sampler.sample_constrained(num_draws)
@@ -161,27 +162,28 @@ normal = ('../stan/normal.stan', '../stan/normal.json', [0.5, 0.25])
 multi_normal = ('../stan/multi_normal.stan', '../stan/multi_normal.json', [0.2, 0.1])
 eight_schools = ('../stan/eight-schools.stan', '../stan/eight-schools.json', [0.5, 0.25])
 irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.05, 0.025])
-lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.018, 0.009, 0.004])
+lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.018, 0.009])
 arK = ('../stan/arK.stan', '../stan/arK.json', [0.01, 0.005])
 garch = ('../stan/garch11.stan', '../stan/garch.json', [0.16, 0.08])
 gauss_mix = ('../stan/low_dim_gauss_mix.stan', '../stan/low_dim_gauss_mix.json', [0.01, 0.005])
-hmm = ('../stan/hmm_example.stan', '../stan/hmm_example.json', [0.025, 0.125])
+hmm = ('../stan/hmm_example.stan', '../stan/hmm_example.json', [0.025, 0.0125])
 pkpd = ('../stan/one_comp_mm_elim_abs.stan', '../stan/one_comp_mm_elim_abs.json', [0.1, 0.05])
 
 covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
 arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
 prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
 
-model_data_steps = [hmm, pkpd, garch, arK, multi_normal, normal,
-                        eight_schools, gauss_mix, arma,
+model_data_steps = [arma, multi_normal, normal, eight_schools,
+                        gauss_mix, hmm, pkpd, garch, arK, 
                         lotka_volterra, irt]
                         # [covid, prophet]
 
 stop_griping()
-seed1 = 84983484
-seed2 = 94281984
-seed3 = 73727475
-seeds = [seed1]
+seed1 = 57484894
+seed2 = 98346701
+seed3 = 33132536
+seed4 = 12493923
+seeds = [seed1, seed2, seed3, seed4]
 print(f"SEEDS: {seeds}")
 num_draws = 400
 for program_path, data_path, step_sizes in model_data_steps:
@@ -195,12 +197,11 @@ for program_path, data_path, step_sizes in model_data_steps:
             nuts_experiment(program_path=program_path, data=data_path,
                                 inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
                                 theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
-        for uturn_condition in ['distance', 'angle']:  # 'angle', 'sym_distance'
-            for path_fraction in ['full', 'half']: # , 'quarter']:
-                for seed in seeds:
+            for uturn_condition in ['distance']:  # 'angle', 'sym_distance'
+                for path_fraction in ['full']: # , 'half', 'quarter']:
                     turnaround_experiment(program_path=program_path,
                                             data=data_path,
-                                            init=nuts_draw_array,
+                                            theta_unc=np.array(nuts_draw_array),
                                             stepsize=step_size,
                                             num_draws=num_draws,
                                             uturn_condition=uturn_condition,
