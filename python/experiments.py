@@ -158,35 +158,33 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
 
 
 
-normal = ('../stan/normal.stan', '../stan/normal.json', [0.5, 0.25])
-multi_normal = ('../stan/multi_normal.stan', '../stan/multi_normal.json', [0.2, 0.1])
-eight_schools = ('../stan/eight-schools.stan', '../stan/eight-schools.json', [0.5, 0.25])
-irt = ('../stan/irt_2pl.stan', '../stan/irt_2pl.json', [0.05, 0.025])
-lotka_volterra = ('../stan/lotka_volterra.stan', '../stan/hudson_lynx_hare.json', [0.018, 0.009])
-arK = ('../stan/arK.stan', '../stan/arK.json', [0.01, 0.005])
-garch = ('../stan/garch11.stan', '../stan/garch.json', [0.16, 0.08])
-gauss_mix = ('../stan/low_dim_gauss_mix.stan', '../stan/low_dim_gauss_mix.json', [0.01, 0.005])
-hmm = ('../stan/hmm_example.stan', '../stan/hmm_example.json', [0.025, 0.0125])
-pkpd = ('../stan/one_comp_mm_elim_abs.stan', '../stan/one_comp_mm_elim_abs.json', [0.1, 0.05])
+normal = ('normal', [0.5, 0.25])
+multi_normal = ('correlated-normal', [0.2, 0.1])
+eight_schools = ('eight-schools', [0.5, 0.25])
+irt = ('irt-2pl', [0.05, 0.025])
+lotka_volterra = ('lotka-volterra', [0.018, 0.009])
+arK = ('arK', [0.01, 0.005])
+garch = ('garch', [0.16, 0.08])
+gauss_mix = ('normal-mixture', [0.01, 0.005])
+hmm = ('hmm', [0.025, 0.0125])
+pkpd = ('pkpd', [0.1, 0.05])
+arma = ('arma', [0.016, 0.008])
+glmm_poisson = ('glmm-poisson', [0.001, 0.0005])
+covid = ('covid-19-imperial-v2', [0.01])
+prophet = ('prophet', [0.01])
 
-covid = ('../stan/covid19imperial_v2.stan', '../stan/ecdc0401.json', [0.01])
-arma = ('../stan/arma11.stan', '../stan/arma.json', [0.016, 0.008])
-prophet = ('../stan/prophet.stan', '../stan/rstan_downloads.json', [0.1])
-
-model_data_steps = [arma, multi_normal, normal, eight_schools,
-                        gauss_mix, hmm, pkpd, garch, arK, 
-                        lotka_volterra, irt]
-                        # [covid, prophet]
+model_steps = [multi_normal, normal, eight_schools, arma, glmm_poisson,
+    gauss_mix, hmm, pkpd, garch, arK, lotka_volterra, irt] # [covid, prophet]
 
 stop_griping()
-seed1 = 57484894
-seed2 = 98346701
-seed3 = 33132536
-seed4 = 12493923
-seeds = [seed1, seed2, seed3, seed4]
+meta_seed = 57484894
+seed_rng = np.random.default_rng(meta_seed)
+seeds = rng.integers(low=0, high=2**32, size=2)
 print(f"SEEDS: {seeds}")
 num_draws = 400
-for program_path, data_path, step_sizes in model_data_steps:
+for program_name, step_sizes, step_sizes in model_steps:
+    program_path = '../stan' + program_path + '.stan'
+    data_path = '../stan' + program_path + '.json'
     print(f"\nMODEL: {program_path}")
     print("============================================================")
     nuts_draw_dict, nuts_draw_array, theta_hat, theta_sq_hat, adapted_metric, adapted_step_size = nuts_adapt(program_path=program_path, data_path=data_path, seed=seed1)
