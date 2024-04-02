@@ -33,16 +33,16 @@ class HmcSamplerBase:
         except ExceptionType as e:
             return np.NINF
 
-    def draw(self):
-        self._rho = self._rng.normal(size=self._model.param_unc_num())
-        logp = self.log_joint(self._theta, self._rho)
-        theta_prop, rho_prop = self.leapfrog(self._theta, self._rho)
-        rho_prop = -rho_prop
-        logp_prop = self.log_joint(theta_prop, rho_prop)
-        if np.log(self._rng.uniform()) < logp_prop - logp:
-            self._theta = theta_prop
-            self._rho = rho_prop
-        return self._theta, self._rho
+    # def draw(self):
+    #     self._rho = self._rng.normal(size=self._model.param_unc_num())
+    #     logp = self.log_joint(self._theta, self._rho)
+    #     theta_prop, rho_prop = self.leapfrog(self._theta, self._rho)
+    #     rho_prop = -rho_prop
+    #     logp_prop = self.log_joint(theta_prop, rho_prop)
+    #     if np.log(self._rng.uniform()) < logp_prop - logp:
+    #         self._theta = theta_prop
+    #         self._rho = rho_prop
+    #     return self._theta, self._rho
 
     def sample(self, M):
         D = self._model.param_unc_num()
