@@ -1,4 +1,4 @@
-import turnaround as ta
+import turnaround_aggregation as ta
 import cmdstanpy as csp
 import numpy as np
 import bridgestan as bs
@@ -181,7 +181,8 @@ stop_griping()
 seed1 = 84983484
 seed2 = 94281984
 seed3 = 73727475
-seeds = [seed1]
+seed4 = 7072007
+seeds = [seed1, seed2]
 print(f"SEEDS: {seeds}")
 num_draws = 400
 for program_path, data_path, step_sizes in model_data_steps:
@@ -195,7 +196,7 @@ for program_path, data_path, step_sizes in model_data_steps:
             nuts_experiment(program_path=program_path, data=data_path,
                                 inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
                                 theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
-        for uturn_condition in ['distance', 'angle']:  # 'angle', 'sym_distance'
+        for uturn_condition in ['agg','distance', 'angle']:  # 'angle', 'sym_distance'
             for path_fraction in ['full', 'half']: # , 'quarter']:
                 for seed in seeds:
                     turnaround_experiment(program_path=program_path,
