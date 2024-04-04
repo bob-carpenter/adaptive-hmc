@@ -165,7 +165,7 @@ irt = ('irt-2pl', [0.05, 0.025])
 lotka_volterra = ('lotka-volterra', [0.018, 0.009])
 arK = ('arK', [0.01, 0.005])
 garch = ('garch', [0.16, 0.08])
-gauss_mix = ('normal-mixture', [0.01, 0.005])
+normal_mix = ('normal-mixture', [0.01, 0.005])
 hmm = ('hmm', [0.025, 0.0125])
 pkpd = ('pkpd', [0.1, 0.05])
 arma = ('arma', [0.016, 0.008])
@@ -174,7 +174,7 @@ covid = ('covid-19-imperial-v2', [0.01])
 prophet = ('prophet', [0.01])
 
 model_steps = [multi_normal, normal, eight_schools, arma, glmm_poisson,
-    gauss_mix, hmm, pkpd, garch, arK, lotka_volterra, irt] # [covid, prophet]
+    normal_mix, hmm, pkpd, garch, arK, lotka_volterra, irt] # [covid, prophet]
 
 stop_griping()
 meta_seed = 57484894
