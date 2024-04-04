@@ -1,4 +1,4 @@
-import turnaround as ta
+import turnaround_biased as ta
 import cmdstanpy as csp
 import numpy as np
 import bridgestan as bs
@@ -81,7 +81,7 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            # adapt_delta=0.95,
-                           chains=1, iter_warmup=10_000, iter_sampling=20_000,
+                           chains=1, iter_warmup=2_000, iter_sampling=10_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     theta_draw_dict = {name:draws[0] for name, draws in thetas_dict.items()}
@@ -158,7 +158,7 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
 
 
 
-normal = ('normal', [0.5, 0.25])
+normal = ('normal', [0.36, 0.18])
 corr_normal = ('correlated-normal', [0.12, 0.06])
 eight_schools = ('eight-schools', [0.5, 0.25])
 irt = ('irt-2pl', [0.05, 0.025])
@@ -169,17 +169,17 @@ gauss_mix = ('normal-mixture', [0.01, 0.005])
 hmm = ('hmm', [0.025, 0.0125])
 pkpd = ('pkpd', [0.1, 0.05])
 arma = ('arma', [0.016, 0.008])
-glmm_poisson = ('glmm-poisson', [0.001, 0.0005])
+poisson_glmm = ('glmm-poisson', [0.008, 0.004])
 covid = ('covid19-imperial-v2', [0.01])
 prophet = ('prophet', [0.0006, 0.0003])
 
-model_steps = [corr_normal, normal, eight_schools, arma, glmm_poisson,
-    gauss_mix, hmm, pkpd, garch, arK, lotka_volterra, irt, prophet] # [covid]
+model_steps = [normal, corr_normal, irt, poisson_glmm, eight_schools,
+    gauss_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # [covid]
 
 stop_griping()
 meta_seed = 57484894
 seed_rng = np.random.default_rng(meta_seed)
-seeds = seed_rng.integers(low=0, high=2**32, size=3)
+seeds = seed_rng.integers(low=0, high=2**32, size=4)
 print(f"SEEDS: {seeds}")
 num_draws = 400
 for program_name, step_sizes in model_steps:
@@ -197,7 +197,7 @@ for program_name, step_sizes in model_steps:
                                 inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
                                 theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
             for uturn_condition in ['distance']:  # 'sym_distance'
-                for path_fraction in ['full', 'half', 'quarter']: # , 'half', 'quarter']:
+                for path_fraction in ['full']: # , 'half', 'quarter']:
                     turnaround_experiment(program_path=program_path,
                                             data=data_path,
                                             theta_unc=np.array(nuts_draw_array),
