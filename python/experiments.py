@@ -1,4 +1,4 @@
-import turnaround_biased as ta
+import turnaround_binomial as ta
 import cmdstanpy as csp
 import numpy as np
 import bridgestan as bs
