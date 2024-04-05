@@ -121,13 +121,13 @@ def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, dr
     theta_sq_hat_nuts = (parameter_draws**2).mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_nuts)
     rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_nuts)
-    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):8.3f};  leapfrog_steps={leapfrog_steps:d};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
     
 
 def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
-                              uturn_condition, path_fraction, theta_hat, theta_sq_hat,
+                              uturn_condition, path_frac, theta_hat, theta_sq_hat,
                               seed):
     model_bs = bs.StanModel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
@@ -135,8 +135,8 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
     theta = model_bs.param_unconstrain(theta_unc)
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta, rng=rng,
-                              uturn_condition=uturn_condition,
-                              path_fraction=path_fraction)
+                                       uturn_condition=uturn_condition,
+                                       path_frac=path_frac)
     constrained_draws = sampler.sample_constrained(num_draws)
     rejects, prop_rejects = num_rejects(constrained_draws)
     prop_no_return = sampler._cannot_get_back_rejects / num_draws
@@ -146,7 +146,7 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
     theta_sq_hat_turnaround = (constrained_draws**2).mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
     rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_turnaround)
-    print(f"AHMC({uturn_condition}, {path_fraction}): MSJD={msjd:8.3f};  leapfrog_steps={sampler._gradient_evals:d}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    print(f"AHMC({uturn_condition}, {path_frac}): MSJD={msjd:8.3f};  leapfrog_steps={sampler._gradient_evals}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
@@ -179,7 +179,7 @@ model_steps = [normal, corr_normal, irt, poisson_glmm, eight_schools,
 stop_griping()
 meta_seed = 57484894
 seed_rng = np.random.default_rng(meta_seed)
-seeds = seed_rng.integers(low=0, high=2**32, size=4)
+seeds = seed_rng.integers(low=0, high=2**32, size=2)
 print(f"SEEDS: {seeds}")
 num_draws = 400
 for program_name, step_sizes in model_steps:
@@ -197,14 +197,14 @@ for program_name, step_sizes in model_steps:
                                 inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
                                 theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
             for uturn_condition in ['distance']:  # 'sym_distance'
-                for path_fraction in ['full']: # , 'half', 'quarter']:
+                for path_frac in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:  # ['full', 'half', 'quarter'] for uniform
                     turnaround_experiment(program_path=program_path,
                                             data=data_path,
                                             theta_unc=np.array(nuts_draw_array),
                                             stepsize=step_size,
                                             num_draws=num_draws,
                                             uturn_condition=uturn_condition,
-                                            path_fraction=path_fraction,
+                                            path_frac=path_frac,
                                             theta_hat=theta_hat,
                                             theta_sq_hat=theta_sq_hat,
                                             seed=seed)

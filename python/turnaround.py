@@ -68,11 +68,11 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             rho_star = -rho_star
             Lstar = self.uturn(theta_star, rho_star)
             LBstar = self.lower_step_bound(Lstar)
-            self._gradient_evals += (L - 1) + (Lstar - 1 - N)  # DIAGNOSTIC
-            self._fwds.append(L)                               # DIAGNOSTIC
-            self._bks.append(Lstar)                            # DIAGNOSTIC
+            self._gradient_evals += L + Lstar - N    # DIAGNOSTIC
+            self._fwds.append(L)                     # DIAGNOSTIC
+            self._bks.append(Lstar)                  # DIAGNOSTIC
             if not(LBstar <= N and N < Lstar):
-                self._cannot_get_back_rejects += 1             # DIAGNOSTIC
+                self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return
             log_accept = (
                 self.log_joint(theta_star, rho_star) - np.log(Lstar - LBstar)

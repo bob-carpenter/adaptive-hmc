@@ -10,11 +10,12 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     proportional to number of steps, flips momentum, then balances
     with reverse proposal probability. 
     """
-    def __init__(self, model, stepsize, theta, rng, uturn_condition, path_fraction,
+    def __init__(self, model, stepsize, theta, rng, uturn_condition, path_frac=0.5,
                      max_leapfrog = 1024):
         super().__init__(model, stepsize, rng)
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
+        self._success_prob = path_frac
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
         self._fwds = []                    # DIAGNOSTIC
         self._bks = []                     # DIAGNOSTIC
@@ -50,7 +51,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
 
     def sample_length(self, L):
         lengths, p = self.range_probs(L)
-        n = self._rng.binomial(L, 0.6)
+        n = self._rng.binomial(L, self._success_prob)
         return n
 
     def length_log_prob(self, N, L):
@@ -58,7 +59,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         _, p = self.range_probs(L)
         if 0 <= N and N < L:
             # logp = np.log(p[N])
-            logp = sp.stats.binom.logpmf(N, L, 0.6)
+            logp = sp.stats.binom.logpmf(N, L, self._success_prob)
             return logp
         else:
             return np.NINF
@@ -76,7 +77,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             theta_star, rho_star = self.leapfrog(theta, rho, N)
             rho_star = -rho_star
             Lstar = self.uturn(theta_star, rho_star)
-            self._gradient_evals += (L - 1) + (Lstar - 1 - N)  # DIAGNOSTIC
+            self._gradient_evals += L + Lstar - N    # DIAGNOSTIC
             self._fwds.append(L)                     # DIAGNOSTIC
             self._bks.append(Lstar)                  # DIAGNOSTIC
             if not(1 <= N and N < Lstar):
