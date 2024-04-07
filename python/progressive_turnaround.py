@@ -13,6 +13,7 @@ class ProgressiveTurnaroundSampler(hmc.HmcSamplerBase):
         self._fwds = []                    # DIAGNOSTIC
         self._bks = []                     # DIAGNOSTIC
         self._divergences = 0              # DIAGNOSTIC
+        self._gradient_evals = 0           # DIAGNOSTIC
 
     def uturn(self, theta, rho):
         H0 = self.log_joint(theta, rho)
@@ -50,6 +51,7 @@ class ProgressiveTurnaroundSampler(hmc.HmcSamplerBase):
             rho_star = -rho_star
             M, _, _, _, lsw_M = self.uturn(theta_star, rho_star)
 
+            self._gradient_evals += N + M
             self._fwds.append(N)
             self._bks.append(M)
 

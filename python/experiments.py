@@ -1,4 +1,5 @@
 import turnaround_binomial as ta
+import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
 import bridgestan as bs
@@ -23,7 +24,7 @@ def flatten_dict_values(data_dict):
             flattened_list.append(value)
     print(flattened_list)
     return np.array(flattened_list)
-    
+
 def sq_jumps(draws):
     M = np.shape(draws)[0]
     jumps = draws[range(1, M), :] - draws[range(0, M-1), :]
@@ -64,7 +65,7 @@ def num_rejects(draws):
         if (draws[m, :] == draws[m + 1, :]).all():
             rejects += 1
     return rejects, rejects / num_draws
-        
+
 def constrain(model, draws):
     num_draws = np.shape(draws)[0]
     D = model.param_unc_num()
@@ -94,7 +95,7 @@ def nuts_adapt(program_path, data_path, seed):
     step_size = fit.step_size
     return theta_draw_dict, theta_draw_array, theta_hat, theta_sq_hat, metric, step_size
 
-    
+
 def nuts(program_path, data_path, inits, step_size, draws, seed):
     model = csp.CmdStanModel(stan_file = program_path)
     fit = model.sample(data = data_path, step_size=step_size, chains=1,
@@ -124,7 +125,7 @@ def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, dr
     print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
-    
+
 
 def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
                               uturn_condition, path_frac, theta_hat, theta_sq_hat,
@@ -156,7 +157,34 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
     # for n in range(10):
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
-
+def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
+                           theta_hat, theta_sq_hat, seed):
+    model_bs = bs.StanModel(model_lib=program_path, data=data,
+                         capture_stan_prints=False)
+    rng = np.random.default_rng(seed)
+    theta = model_bs.param_unconstrain(theta_unc)
+    sampler = pta.ProgressiveTurnaroundSampler(model=model_bs, stepsize=stepsize,
+                                               theta=theta, rng=rng)
+    constrained_draws = sampler.sample_constrained(num_draws)
+    rejects, prop_rejects = num_rejects(constrained_draws)
+    prop_no_return = sampler._cannot_get_back_rejects / num_draws
+    prop_diverge = sampler._divergences / num_draws
+    msjd = np.mean(sq_jumps(constrained_draws))
+    theta_hat_turnaround = constrained_draws.mean(axis=0)
+    theta_sq_hat_turnaround = (constrained_draws**2).mean(axis=0)
+    rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
+    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_turnaround)
+    print(f"PrAHMC: MSJD={msjd:8.3f};  leapfrog_steps={sampler._gradient_evals}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
+    v = np.mean(constrained_draws**2, axis=0)
+    # print(f"Mean(param^2): {v}")
+    print(f"Mean(var > 1): {np.mean(v > 1)}")
+    # scalar_draws_for_traceplot = constrained_draws[: , 0]
+    # print(traceplot(scalar_draws_for_traceplot))
+    # print(histogram(sq_jumps(draws)))
+    # print("(Forward steps to U-turn from initial, Backward steps to U-turn from proposal)")
+    # for n in range(10):
+    #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 normal = ('normal', [0.36, 0.18])
 corr_normal = ('correlated-normal', [0.12, 0.06])
@@ -196,6 +224,14 @@ for program_name, step_sizes in model_steps:
             nuts_experiment(program_path=program_path, data=data_path,
                                 inits=nuts_draw_dict, step_size=step_size, theta_hat=theta_hat,
                                 theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
+            progressive_experiment(program_path=program_path,
+                                   data=data_path,
+                                   theta_unc=np.array(nuts_draw_array),
+                                   stepsize=step_size,
+                                   num_draws=num_draws,
+                                   theta_hat=theta_hat,
+                                   theta_sq_hat=theta_sq_hat,
+                                   seed=seed)
             for uturn_condition in ['distance']:  # 'sym_distance'
                 for path_frac in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:  # ['full', 'half', 'quarter'] for uniform
                     turnaround_experiment(program_path=program_path,
@@ -208,5 +244,3 @@ for program_name, step_sizes in model_steps:
                                             theta_hat=theta_hat,
                                             theta_sq_hat=theta_sq_hat,
                                             seed=seed)
-    
-
