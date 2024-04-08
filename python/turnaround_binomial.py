@@ -10,7 +10,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     proportional to number of steps, flips momentum, then balances
     with reverse proposal probability. 
     """
-    def __init__(self, model, stepsize, theta, rng, uturn_condition, path_frac=0.5,
+    def __init__(self, model, stepsize, theta, rng, path_frac=0.5,
                      max_leapfrog = 1024):
         super().__init__(model, stepsize, rng)
         self._max_leapfrog_steps = max_leapfrog
@@ -50,7 +50,6 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return lengths, p
 
     def sample_length(self, L):
-        lengths, p = self.range_probs(L)
         n = self._rng.binomial(L, self._success_prob)
         return n
 
@@ -84,9 +83,9 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
                 self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return
             log_accept = ((self.log_joint(theta_star, rho_star)
-                               - self.length_log_prob(N, Lstar))
+                               + self.length_log_prob(N, Lstar))
                           - (log_joint_theta_rho
-                                 - self.length_log_prob(N, L)))
+                                + self.length_log_prob(N, L)))
             if np.log(self._rng.uniform()) < log_accept:
                 self._theta = theta_star
                 self._rho = rho_star

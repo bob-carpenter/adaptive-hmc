@@ -8,10 +8,9 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     Uniformly samples number of steps from 1 up to U-turn, flips
     momentum, then balances with reverse proposal probability.
     """
-    def __init__(self, model, stepsize, theta, rng, uturn_condition, path_fraction,
+    def __init__(self, model, stepsize, theta, rng, path_fraction,
                      max_leapfrog = 512):
         super().__init__(model, stepsize, rng)
-        self._uturn_condition = uturn_condition
         self._path_fraction = path_fraction
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
@@ -22,14 +21,6 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         self._gradient_evals = 0           # DIAGNOSTIC
 
     def uturn(self, theta, rho):
-        if self._uturn_condition == 'distance':
-            return self.uturn_distance(theta, rho)
-        elif self._uturn_condition == 'sym_distance':
-            return self.uturn_sym_distance(theta, rho)
-        else:
-            raise ValueError(f"unknown uturn condition: {self._uturn_condition}")
-       
-    def uturn_distance(self, theta, rho):
         log_joint_theta_rho = self.log_joint(theta, rho)
         theta_next = theta
         rho_next = rho
