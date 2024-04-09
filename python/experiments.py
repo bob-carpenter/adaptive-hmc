@@ -93,16 +93,17 @@ def nuts_adapt(program_path, data_path, seed):
     theta_hat = theta_draws.mean(axis=0)
     theta_sq_hat = (theta_draws**2).mean(axis=0)
     metric = fit.metric
-    stepsize = fit.step_size
+    stepsize = fit.step_size[0]
     return thetas_dict, theta_draws, theta_hat, theta_sq_hat, metric, stepsize
 
 
 def nuts(program_path, data_path, inits, stepsize, draws, seed):
     model = csp.CmdStanModel(stan_file = program_path)
-    fit = model.sample(data = data_path, stepsize=stepsize, chains=1,
+    fit = model.sample(data = data_path, step_size=stepsize, chains=1,
                            inits = inits, adapt_engaged=False,
+                           show_console=False, show_progress=False,
                            metric="unit_e", iter_warmup=0, iter_sampling=draws,
-                           seed = seed, show_progress=False)
+                           seed = seed)
     draws = fit.draws(concat_chains = True)
     cols = np.shape(draws)[1]
     # Magic numbers because CmdStanPy does not expose these
@@ -208,8 +209,8 @@ def all_vs_nuts():
     stop_griping()
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
-    seeds = seed_rng.integers(low=0, high=2**32, size=2)
-    num_draws = 100
+    seeds = seed_rng.integers(low=0, high=2**32, size=5)
+    num_draws = 400
     print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
     for program_name, stepsizes in model_steps():
         program_path = '../stan/' + program_name + '.stan'
@@ -220,7 +221,7 @@ def all_vs_nuts():
         num_unc_params = np.shape(nuts_draws_array[1, :])[0]
         print(f"# unconstrained parameters = {num_unc_params}")
         print(f"NUTS: adapted step size = {adapted_stepsize}")
-        for stepsize in stepsizes:
+        for stepsize in [adapted_stepsize, adapted_stepsize / 2]:
             print(f"\nSTEP SIZE = {stepsize}")
             for m, seed in enumerate(seeds):
                 DRAW_INDEX = 5  # chosen arbitrarily
@@ -238,7 +239,7 @@ def all_vs_nuts():
                 #                    theta_sq_hat=theta_sq_hat,
                 #                    seed=seed)   
                 for uturn_condition in ['distance']:  # 'sym_distance'
-                    for path_frac in [0.5, 0.6, 0.7, 0.8]:  # ['full', 'half', 'quarter'] for uniform
+                    for path_frac in [0.5, 0.625, 0.75, 0.825]:  # ['full', 'half', 'quarter'] for uniform
                         turnaround_experiment(program_path=program_path,
                                                 data=data_path,
                                                 theta_unc=np.array(nuts_draw_array),
@@ -252,7 +253,7 @@ def all_vs_nuts():
 
 def binomial_prob_plot():
     stop_griping()
-    num_seeds = 100
+    num_seeds = 400
     num_draws = 100
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
@@ -303,7 +304,6 @@ def binomial_prob_plot():
                 + pn.labs(y = '', x='Binomial Success Probability', color="Step Size")
                 + pn.facet_wrap('~ val_type', scales='free_y', ncol=3))
     plot.save(filename='binomial_prob_steps_plot.pdf', width=8.5, height=5)
-    # plot.show()
 
     
 def learning_curve():                
@@ -363,5 +363,6 @@ def learning_curve():
 
 ### MAIN ###
 
+all_vs_nuts()
 # binomial_prob_plot()
-learning_curve()
+# learning_curve()
