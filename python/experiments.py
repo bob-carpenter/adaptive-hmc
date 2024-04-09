@@ -320,7 +320,7 @@ def learning_curve():
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta0,
                                        path_frac=0.6, rng=rng)
-    N = 100_000
+    N = 1_000_000
     draws = sampler.sample_constrained(N)
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
@@ -363,5 +363,5 @@ def learning_curve():
 
 ### MAIN ###
 
-binomial_prob_plot()
+# binomial_prob_plot()
 learning_curve()
