@@ -145,12 +145,12 @@ class HMC():
     
     def step(self, q, nleap=None, step_size=None):
         
-        return step(q, nleap, step_size)
+        return self.hmc_step(q, nleap, step_size)
 
     
     def sample(self, q, p=None,
                nsamples=100, burnin=0, step_size=0.1, nleap=10,
-               epsadapt=0, target_accept=0.65,
+               epsadapt=0, target_accept=0.65, jitter=True,
                callback=None, verbose=False):
 
         self.nsamples = nsamples
@@ -166,14 +166,17 @@ class HMC():
             q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
 
         for i in range(self.nsamples + self.burnin):
-            q, p, acc, Hs, count, steplist, mhfac = self.step(q) 
+            if jitter:
+                nleap = np.random.uniform(1, self.nleap)
+            else:
+                nleap = self.nleap
+            q, p, acc, Hs, count = self.step(q, nleap=nleap, step_size=self.step_size) 
             state.i += 1
             if (i > self.burnin):
                 state.accepts.append(acc)
                 state.samples.append(q)
                 state.Hs.append(Hs)
                 state.counts.append(count)
-                state.steplist.append(steplist)
                 if callback is not None: callback(state)
 
         state.to_array()
