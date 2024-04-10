@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from scipy.stats import expon, beta, multivariate_normal, uniform
+from scipy.stats import expon, beta, multivariate_normal, uniform, binom
 
 from util import Sampler, inverse_Hessian_approx, Hessian_approx, DualAveragingStepSize, PrintException, power_iteration
 
@@ -40,11 +40,15 @@ class DRHMC_AdaptiveStepsize(HMC):
         vb = False
         qs, gs = [], []
         while (est_hessian) & (i < attempts): # if we hit nans rightaway, reduce step size and try again
-            if i:
+            if i > 0:
                 step_size /= 2.
                 if self.verbose: print(f'{i}, halve stepsize', step_size)
                 q1, p1, qvec, gvec = self.leapfrog(q0, p0, N=n_lbfgs + 1, step_size=step_size)
             qs, gs = [], []
+            if len(qvec) < n_lbfgs:
+                if self.verbose: print('empty qvec')
+                i+= 1
+                continue
             for ig, g in enumerate(gvec):  # sometimes nans might be at the end of the trajectory. Discard them
                 if np.isnan(g).any():
                     pass
@@ -210,12 +214,17 @@ class DRHMC_AdaptiveStepsize(HMC):
 ##################################
 class HMC_uturn(HMC):
 
-    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=10, max_nleap=512):
+    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None, min_nleap=5, max_nleap=512,
+                 distribution='uniform', offset=0.5, p_binom=0.5,symmetric=True):
         super(HMC_uturn, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix)        
         self.min_nleap = min_nleap
         self.max_nleap = max_nleap
-                    
-
+        self.distribution = distribution
+        self.offset = offset
+        self.p_binom = p_binom
+        self.symmetric = symmetric
+        if not self.symmetric:
+            print("Assymmetric U-turn condition")
 
     # def uturn(self, theta, rho, step_size): # Can be deleted as no longer used
     #         theta_next = theta
@@ -237,7 +246,7 @@ class HMC_uturn(HMC):
     #                 last_dist = dist
     #                 N += 1
     
-    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=False):
+    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=True, return_angles=False):
         if theta_next is None: theta_next = theta
         if rho_next is None: rho_next = rho
         N = Noffset
@@ -245,57 +254,92 @@ class HMC_uturn(HMC):
         H0 = self.H(theta, rho)
         g_next = None
         # check if given theta/rho already break the condition
-        if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
-            print('returning at the beginning')
-            return 0
-
+        # if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
+        #     print('returning at the beginning')
+        #     return 0
+        angles = []
         while True:
             theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
             g_next = gvec[-1]
             assert (theta_next == qvec[-1]).all()
             if check_goodness:
                 H1 = self.H(theta_next, rho_next)
-                prob = np.exp(H0 - H1)
-                if np.isnan(prob) or np.isinf(prob): # or (prob < 0.01):
-                    return N, qs, ps, gs, False
+                log_prob = H0 - H1
+                if np.isnan(log_prob) : # or np.isinf(prob) or (prob < 0.001):
+                    if return_angles:
+                        return N, qs, ps, gs, angles, False
+                    else: return N, qs, ps, gs, False
             qs.append(theta_next)
             ps.append(rho_next)
             gs.append(g_next)
-            if (np.dot((theta_next - theta), rho_next) > 0) and (np.dot((theta - theta_next), -rho) > 0) and (N < self.max_nleap) :
-                N += 1
+            angles.append([np.dot((theta_next - theta), rho_next)/np.linalg.norm(rho_next)/np.linalg.norm(theta_next - theta) , np.dot((theta - theta_next), -rho)/np.linalg.norm(rho_next)/np.linalg.norm(theta_next - theta)])
+            if (np.dot((theta_next - theta), rho_next) > 0)  and (N < self.max_nleap) :
+                if self.symmetric:
+                    if not (np.dot((theta - theta_next), -rho) > 0):
+                        if return_angles: return N, qs, ps, gs, angles, True
+                        else: return N, qs, ps, gs, True
+                    else:
+                        N+=1
+                else: N+=1
             else:
-                N += 1
-                return N, qs, ps, gs, True
-
+                if return_angles: return N, qs, ps, gs, angles, True
+                else: return N, qs, ps, gs, True
             
-    def step(self, q, step_size=None, offset=0.50):
+                    
+            
+    def nleap_dist(self, N, nleap=None):
+        
+        if self.distribution == 'uniform':
+            N0, N1 = int(self.offset*N), N
+            if nleap is None:
+                nleap = self.rng.integers(N0, N1)
+            lp =  -np.log(N1-N0)
+            if (nleap < N0) or (nleap > N1) :
+                lp = -np.inf
+                
+        if self.distribution == 'binomial':
+            if nleap is None:
+                nleap = self.rng.binomial(N-1, self.p_binom) # inlcusive N-1
+            lp = binom.logpmf(nleap, N-1, self.p_binom)
+            if nleap > N-1:
+                lp = -np.inf
+                
+        return nleap, lp
+
+    
+    def step(self, q, step_size=None):
 
         if step_size is None: step_size = self.step_size
         self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
         
         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
-        Nuturn, qs, ps, gs, success = self.nuts_criterion(q, p, step_size)
-        if Nuturn == 0:
-            return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0], 0
 
-        N0, N1 = int(offset*Nuturn), Nuturn
-        nleap = self.rng.integers(N0, N1)
+        # Go forward
+        Nuturn, qs, ps, gs, angles, success = self.nuts_criterion(q, p, step_size, return_angles=True)
+        if Nuturn == 0:
+            return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0], 0, [[]]
+
+        nleap, lp1 = self.nleap_dist(Nuturn)
         #q1, p1, qvec, gvec = self.leapfrog(q, p, N=nleap+1, step_size=step_size)
         q1, p1, qvec, gvec = qs[nleap], ps[nleap], qs, gs
         
+        # Go backward
         Nuturn_rev, _, _, _, _ = self.nuts_criterion(q1, -p1, step_size)
         #Nuturn_rev, _, _, _ = self.nuts_criterion(q1, -p1, step_size, Noffset=nleap, theta_next=q, rho_next=-p)
-        N0_rev, N1_rev = int(offset*Nuturn_rev), Nuturn_rev
+        
+        #N0_rev, N1_rev = int(offset*Nuturn_rev), Nuturn_rev
+        nleap2, lp2 = self.nleap_dist(Nuturn_rev, nleap=nleap)
+        assert nleap2 == nleap
         steplist = [Nuturn, Nuturn_rev, nleap]
         
+        # accept/reject
         log_prob, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
-        lp1, lp2 =   -np.log(N1-N0), -np.log(N1_rev-N0_rev)
-        if (nleap < N0_rev) or (nleap >= N1_rev): lp2 = -np.inf
         log_prob_N = lp2 - lp1
+        #log_prob_N = - lp2 + lp1
         mhfac = np.exp(log_prob_N)
         log_prob = log_prob + log_prob_N 
         if np.isnan(log_prob) or (q-q1).sum()==0:
-            return q, p, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, 0
+            return q, p, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, 0, angles
         else:
             u =  np.random.uniform(0., 1., size=1)
             if  np.log(u) > min(0., log_prob):
@@ -307,13 +351,13 @@ class HMC_uturn(HMC):
                 accepted = 1
                 Hs = [H0, H1]
                     
-        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
+        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac, angles
 
     
     def sample(self, q, p=None,
                nsamples=100, burnin=0, step_size=0.1, nleap=None, 
-               epsadapt=0, target_accept=0.65,
-               callback=None, verbose=False, seed=99):
+               epsadapt=0, target_accept=0.65, offset=0.5,
+               callback=None, verbose=False, seed=99, return_angles=False):
 
         self.nsamples = nsamples
         self.burnin = burnin
@@ -321,24 +365,247 @@ class HMC_uturn(HMC):
         self.nleap = None
         if nleap is not None:
             print("Nleap argument is ignored in U-turn sampler")
-        #self.delayed_proposals = delayed_proposals
         self.verbose = verbose
-        #self.constant_trajectory = constant_trajectory
-        #self.nleap_dist = lambda x:  self.nleap
         self.rng = np.random.default_rng(seed)
         
         state = Sampler()
-        state.steplist = []
+        state.stepcount = []
+        state.mhfac = []
+        state.angles = []
         
         if epsadapt:
             q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
             
         
         for i in range(self.nsamples + self.burnin):
-            #q, p, acc, Hs, count, steplist, mhfac = self.step(q, nleap, self.step_size)
-            q, p, acc, Hs, count, steplist, mhfac = self.step(q, self.step_size)
-            #q, p, acc, Hs, count, steplist = self.step(q) 
+            q, p, acc, Hs, count, stepcount, mhfac, angles = self.step(q, self.step_size)
             state.i += 1
+            if (i > self.burnin):
+                state.accepts.append(acc)
+                state.samples.append(q)
+                state.Hs.append(Hs)
+                state.counts.append(count)
+                state.stepcount.append(stepcount)
+                state.mhfac.append(mhfac)
+                if return_angles: state.angles.append(angles)
+                if callback is not None: callback(state)
+
+        state.to_array()
+        
+        return state
+    
+
+
+
+###################################################
+class DRHMC_Adaptive(HMC_uturn, DRHMC_AdaptiveStepsize):
+
+    def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None,  min_nleap=5, max_nleap=512,
+                 distribution='uniform', offset=0.5, p_binom=0.5,symmetric=True):
+        super(DRHMC_Adaptive, self).__init__(D=D, log_prob=log_prob, grad_log_prob=grad_log_prob, mass_matrix=mass_matrix, min_nleap=min_nleap, max_nleap=max_nleap,
+                                             distribution=distribution, offset=offset, p_binom=p_binom,symmetric=symmetric)
+            
+    def delayed_step(self, q0, p0, qvec, gvec, step_size, log_prob_delayed, Luturn, adaptL=True):
+        
+        verbose = self.verbose
+        if verbose: print(f"trying delayed step")
+        H0, H1 = 0., 0.
+        try:
+            # Estimate the Hessian given the rejected trajectory, use it to estimate step-size
+            eps1, epsf1 = self.get_stepsize_dist(q0, p0, qvec, gvec, step_size)
+            step_size_new = epsf1.rvs(size=1)[0]
+
+            # Make the second proposal
+            if self.constant_trajectory:
+                nleap_new = int(min(self.nleap*step_size/step_size_new, self.nleap*100))
+            else:
+                l = self.rng.uniform(Luturn/2., Luturn)
+                lp_N = np.log(1/(Luturn - Luturn/2.))
+                #l = self.rng.uniform(0, Luturn)
+                #lp_N = np.log(1/(Luturn))
+                if adaptL:
+                    nleap_new = int(l/step_size_new)
+                else:
+                    nleap_new = int(self.nleap)
+            q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
+            vanilla_log_prob = self.accept_log_prob([q0, p0], [q1, p1])
+            
+            # Ghost trajectory for the second proposal
+            # Go backward
+            Nuturn_ghost, qvec_ghost, pvec_ghost, gvec_ghost, success_ghost = self.nuts_criterion(q1, -p1, step_size)
+            Luturn_ghost = Nuturn_ghost * step_size
+            if Nuturn_ghost == 0:
+                qcheck_ghost, pcheck_ghost = q1, -p1
+                qvec_ghost, gvec_ghost = [], []
+                log_prob_check_ghost = -np.inf
+                log_prob_delayed_ghost = 0.
+                Luturn_ghost = self.nleap*step_size
+            else:
+                qcheck_ghost, pcheck_ghost = qvec_ghost[-1], pvec_ghost[-1]
+                log_prob_check_ghost = self.accept_log_prob([q1, -p1], [qcheck_ghost, pcheck_ghost])
+                #log_prob_check_ghost = log_prob_check_ghost - np.log(self.pfactor)
+                log_prob_check_ghost = self.pfactor * log_prob_check_ghost
+                log_prob_delayed_ghost = np.log(1 - np.exp(log_prob_check_ghost))
+            if np.isnan(log_prob_delayed_ghost) : log_prob_delayed_ghost = -np.inf
+            if self.CHECK_DELAYED: log_prob_delayed_ghost = 0.
+            lp_N_ghost = np.log(1/(Luturn_ghost - Luturn_ghost/2.))
+            if (l < Luturn_ghost/2.) or (l > Luturn_ghost): lp_N_ghost = -np.inf
+            # if log_prob_check_ghost > np.log(0.8):
+            #    log_prob_check_ghost = 0.
+            # else:
+            #     log_prob_check_ghost = -np.inf
+            
+            # Estimate Hessian and step-size distribution for ghost trajectory
+            eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
+            steplist = [eps1, eps2, step_size_new]
+
+            # Calcualte different Hastings corrections
+            log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
+            log_prob_N = lp_N_ghost - lp_N
+            if not adaptL:
+                log_prob_N = 0.
+            log_prob_delayed = log_prob_delayed_ghost - log_prob_delayed
+            log_prob = vanilla_log_prob + log_prob_eps + log_prob_delayed  + log_prob_N
+
+            u =  np.random.uniform(0., 1., size=1)
+            if np.isnan(log_prob) or (q0-q1).sum()==0:
+                if verbose: print("reject\n")
+                return q0, p0, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist
+            elif  np.log(u) > min(0., log_prob):
+                if verbose: print("reject\n")
+                return q0, p0, -2, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist
+            else: 
+                if verbose: print("accept\n")
+                return q1, p1, 2., [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist
+            
+        except Exception as e:
+            PrintException()
+            print("exception : ", e)
+            return q0, p0, -1, [0, 0], [0., 0., 0.], [0, 0, 0]
+
+
+    def pre_step(self, q, p, step_size):
+        # Go forward
+        Nuturn, qvec, pvec, gvec, success = self.nuts_criterion(q, p, step_size)
+        Luturn = Nuturn * step_size
+        
+        if (Nuturn == 0) or (not success):
+            log_prob_delayed = 0.
+            qvec, gvec = [], []
+            Luturn = step_size * self.nleap
+            log_prob_check = -np.inf
+        else:
+            qcheck, pcheck = qvec[-1], pvec[-1]
+            log_prob_check, H0, Hcheck = self.accept_log_prob([q, p], [qcheck, pcheck], return_H=True)
+            #log_prob_check = log_prob_check - np.log(self.pfactor)
+            log_prob_check = self.pfactor * log_prob_check
+        if self.CHECK_U_TURN: log_prob_check = 0. 
+        if self.CHECK_DELAYED: log_prob_check = -np.inf
+        return Nuturn, qvec, pvec, gvec, log_prob_check
+    
+        
+    def step(self, q, nleap=None, step_size=None, delayed=None, CHECK_U_TURN=False, CHECK_DELAYED=False, pfactor=100000.):
+
+        if step_size is None: step_size = self.step_size
+        if delayed is None: delayed = self.delayed_proposals
+        self.leapcount, self.Vgcount, self.Hcount = 0, 0, 0
+        self.CHECK_DELAYED = CHECK_DELAYED
+        self.CHECK_U_TURN = CHECK_U_TURN
+        self.pfactor = pfactor
+        
+        KE = self.setup_KE(self.mass_matrix)
+        p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
+        
+        # Go forward
+        Nuturn, qvec, pvec, gvec, success = self.nuts_criterion(q, p, step_size)
+        Luturn = Nuturn * step_size
+        if (Nuturn == 0) or (not success):
+            log_prob_delayed = 0.
+            qvec, gvec = [], []
+            Luturn = step_size * self.nleap
+            if CHECK_U_TURN : return q, p, -1, [0, 0], [0., 0., 0.], [0, 0, 0]
+            return self.delayed_step(q, p, qvec, gvec, step_size=step_size, log_prob_delayed=log_prob_delayed, Luturn=Luturn)
+
+        qcheck, pcheck = qvec[-1], pvec[-1]
+        log_prob_check, H0, Hcheck = self.accept_log_prob([q, p], [qcheck, pcheck], return_H=True)
+        #log_prob_check = log_prob_check - np.log(self.pfactor)
+        log_prob_check = self.pfactor * log_prob_check
+        if CHECK_U_TURN: log_prob_check = 0. 
+        if CHECK_DELAYED: log_prob_check = -np.inf
+        
+        u =  np.random.uniform(0., 1., size=1)
+        if  np.log(u) > log_prob_check:
+            if CHECK_U_TURN : print("delayed step")
+            log_prob_delayed = np.log(1 - np.exp(log_prob_check))
+            return self.delayed_step(q, p, qvec, gvec, step_size=step_size, log_prob_delayed=log_prob_delayed, Luturn=Luturn)
+            
+        else:
+            # uturn step
+            nleap, lp1 = self.nleap_dist(Nuturn)
+            q1, p1 = qvec[nleap], pvec[nleap]
+        
+            # Go backward
+            Nuturn_rev, qvec_rev, pvec_rev, gvec_rev, success_rev = self.nuts_criterion(q1, -p1, step_size)
+            if Nuturn_rev == 0:
+                return q, p, -1, [0, 0], [0., 0., 0.], [0, 0, 0]
+
+            qcheck_rev, pcheck_rev = qvec_rev[-1], pvec_rev[-1]
+            log_prob_check_rev = self.accept_log_prob([q1, -p1], [qcheck_rev, pcheck_rev])
+            log_prob_check_rev = self.pfactor * log_prob_check_rev 
+            # if log_prob_check_rev > np.log(0.8):
+            #     log_prob_check_rev = 0.
+            # else:
+            #     log_prob_check_rev = -np.inf
+            if CHECK_U_TURN: log_prob_check_rev = 0. 
+            
+            nleap2, lp2 = self.nleap_dist(Nuturn_rev, nleap=nleap)
+            assert nleap2 == nleap
+            steplist = [Nuturn, Nuturn_rev, nleap]
+
+            log_prob_accept, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
+            log_prob_accept_total = log_prob_accept + lp2 + log_prob_check_rev - lp1 - log_prob_check
+            log_prob_accept_total = min(0, log_prob_accept_total)
+            Hs = [H0, H1]
+            u =  np.random.uniform(0., 1., size=1)
+            if  np.log(u) > min(0., log_prob_accept_total):
+                qf, pf = q, p
+                accepted = 0
+            else:
+                qf, pf = q1, p1
+                accepted = 1
+                
+            return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist
+
+
+    def sample(self, q, p=None,
+               nsamples=100, burnin=0, step_size=0.1, nleap=10,
+               delayed_proposals=True, constant_trajectory=False,
+               epsadapt=0, nleap_adapt=0,
+               target_accept=0.65,
+               callback=None, verbose=False, seed=99):
+
+        np.random.seed(seed)
+        self.rng = np.random.default_rng(seed)
+        self.nsamples = nsamples
+        self.burnin = burnin
+        self.step_size = step_size
+        self.nleap = nleap
+        self.delayed_proposals = delayed_proposals
+        self.constant_trajectory = constant_trajectory
+        self.verbose = verbose
+        niterations = self.nsamples + self.burnin
+        
+        state = Sampler()
+        state.steplist = []
+        
+        if epsadapt:
+            q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
+
+        for i in range(niterations):
+            q, p, acc, Hs, count, steplist = self.step(q) 
+            state.i += 1
+            if (i%(self.nsamples//10) == 0):
+                print(f"In rank {wrank}: iteration {i} of {niterations}")
             if (i > self.burnin):
                 state.accepts.append(acc)
                 state.samples.append(q)
@@ -348,10 +615,11 @@ class HMC_uturn(HMC):
                 if callback is not None: callback(state)
 
         state.to_array()
-        
         return state
     
 
+
+    
 
 ##############################################
 
@@ -494,8 +762,6 @@ class DRHMC_AdaptiveStepsize_autotune(DRHMC_AdaptiveStepsize, HMC_uturn):
         
         return state
     
-
-
 
 
 
