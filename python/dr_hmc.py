@@ -246,7 +246,41 @@ class HMC_uturn(HMC):
     #                 last_dist = dist
     #                 N += 1
     
-    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=True, return_angles=False):
+    
+    def nuts_criterion_with_angles(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=True):
+        if theta_next is None: theta_next = theta
+        if rho_next is None: rho_next = rho
+        N = Noffset
+        qs, ps, gs = [], [], []
+        H0 = self.H(theta, rho)
+        g_next = None
+        angles = []
+        while True:
+            theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
+            g_next = gvec[-1]
+            if check_goodness:
+                H1 = self.H(theta_next, rho_next)
+                log_prob = H0 - H1
+                if np.isnan(log_prob) : # or np.isinf(prob) or (prob < 0.001):
+                    return N, qs, ps, gs, angles, False
+            qs.append(theta_next)
+            ps.append(rho_next)
+            gs.append(g_next)
+            dnorm, pnorm = np.linalg.norm(rho_next), np.linalg.norm(theta_next - theta)
+            angles.append([np.dot((theta_next - theta), rho_next)/dnorm/pnorm , np.dot((theta - theta_next), -rho)/dnorm/pnom])
+            # condition
+            if (np.dot((theta_next - theta), rho_next) > 0)  and (N < self.max_nleap) :
+                if self.symmetric:
+                    if not (np.dot((theta - theta_next), -rho) > 0):
+                        return N, qs, ps, gs, angles, True
+                    else:
+                        N+=1
+                else: N+=1
+            else:
+                return N, qs, ps, gs, angles, True
+            
+                
+    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=True):
         if theta_next is None: theta_next = theta
         if rho_next is None: rho_next = rho
         N = Noffset
@@ -257,7 +291,6 @@ class HMC_uturn(HMC):
         # if (np.dot((theta_next - theta), rho_next) < 0) or (np.dot((theta - theta_next), -rho) < 0) :
         #     print('returning at the beginning')
         #     return 0
-        angles = []
         while True:
             theta_next, rho_next, qvec, gvec = self.leapfrog(theta_next, rho_next, 1, step_size, g=g_next)
             g_next = gvec[-1]
@@ -265,26 +298,20 @@ class HMC_uturn(HMC):
                 H1 = self.H(theta_next, rho_next)
                 log_prob = H0 - H1
                 if np.isnan(log_prob) : # or np.isinf(prob) or (prob < 0.001):
-                    if return_angles: return N, qs, ps, gs, angles, False
-                    else: return N, qs, ps, gs, False
+                    return N, qs, ps, gs, False
             qs.append(theta_next)
             ps.append(rho_next)
             gs.append(g_next)
-            if return_angles:
-                dnorm, pnorm = np.linalg.norm(rho_next), np.linalg.norm(theta_next - theta)
-                angles.append([np.dot((theta_next - theta), rho_next)/dnorm/pnorm , np.dot((theta - theta_next), -rho)/dnorm/pnom])
             # condition
             if (np.dot((theta_next - theta), rho_next) > 0)  and (N < self.max_nleap) :
                 if self.symmetric:
                     if not (np.dot((theta - theta_next), -rho) > 0):
-                        if return_angles: return N, qs, ps, gs, angles, True
-                        else: return N, qs, ps, gs, True
+                        return N, qs, ps, gs, True
                     else:
                         N+=1
                 else: N+=1
             else:
-                if return_angles: return N, qs, ps, gs, angles, True
-                else: return N, qs, ps, gs, True
+                return N, qs, ps, gs, True
             
                     
             
@@ -318,7 +345,7 @@ class HMC_uturn(HMC):
         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
 
         # Go forward
-        Nuturn, qs, ps, gs, angles, success = self.nuts_criterion(q, p, step_size, return_angles=True)
+        Nuturn, qs, ps, gs, success = self.nuts_criterion(q, p, step_size)
         if Nuturn == 0:
             return q, p, -1, [0, 0], [self.Hcount, self.Vgcount, self.leapcount], [0, 0, 0], 0, [[]]
 
@@ -341,7 +368,7 @@ class HMC_uturn(HMC):
         mhfac = np.exp(log_prob_N)
         log_prob = log_prob + log_prob_N 
         if np.isnan(log_prob) or (q-q1).sum()==0:
-            return q, p, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, 0, angles
+            return q, p, -1, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, 0
         else:
             u =  np.random.uniform(0., 1., size=1)
             if  np.log(u) > min(0., log_prob):
@@ -353,13 +380,13 @@ class HMC_uturn(HMC):
                 accepted = 1
                 Hs = [H0, H1]
                     
-        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac, angles
+        return qf, pf, accepted, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, mhfac
 
     
     def sample(self, q, p=None,
                nsamples=100, burnin=0, step_size=0.1, nleap=None, 
                epsadapt=0, target_accept=0.65, offset=0.5,
-               callback=None, verbose=False, seed=99, return_angles=False):
+               callback=None, verbose=False, seed=99):
 
         self.nsamples = nsamples
         self.burnin = burnin
@@ -373,7 +400,6 @@ class HMC_uturn(HMC):
         state = Sampler()
         state.stepcount = []
         state.mhfac = []
-        state.angles = []
         
         if epsadapt:
             q = self.adapt_stepsize(q, epsadapt, target_accept=target_accept) 
@@ -389,7 +415,6 @@ class HMC_uturn(HMC):
                 state.counts.append(count)
                 state.stepcount.append(stepcount)
                 state.mhfac.append(mhfac)
-                if return_angles: state.angles.append(angles)
                 if callback is not None: callback(state)
 
         state.to_array()
@@ -427,7 +452,7 @@ class DRHMC_Adaptive(HMC_uturn, DRHMC_AdaptiveStepsize):
         return Nuturn, qvec, pvec, gvec, log_prob_check
 
     
-    def delayed_step(self, q0, p0, qvec, gvec, step_size, log_prob_delayed, Nuturn, adaptL=True):
+    def delayed_step(self, q0, p0, qvec, gvec, step_size, log_prob_delayed, Nuturn, adaptL=False):
         ##CHECK DELAYED STEP IS FAILING FOR offset=0.5, uniform distribution
         ##
         verbose = self.verbose
