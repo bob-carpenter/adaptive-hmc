@@ -85,7 +85,7 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            # adapt_delta=0.95,
-                           chains=1, iter_warmup=5_000, iter_sampling=40_000,
+                           chains=1, iter_warmup=5_000, iter_sampling=20_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     N = metadata_columns(fit)
@@ -124,7 +124,9 @@ def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, dr
     theta_sq_hat_nuts = (parameter_draws**2).mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_nuts)
     rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_nuts)
-    print(f"NUTS: MSJD={np.mean(sq_jumps(parameter_draws)):8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    msjd = np.mean(sq_jumps(parameter_draws))
+    print(f"NUTS: MSJD={msjd:8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    return msjd, leapfrog_steps, rmse, rmse_sq
     # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
     # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
 
@@ -147,8 +149,9 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
     theta_sq_hat_turnaround = (constrained_draws**2).mean(axis=0)
     rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
     rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_turnaround)
-    print(f"AHMC({path_frac}): MSJD={msjd:8.3f};  leapfrog_steps={sampler._gradient_evals}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
-    return "AHMC", path_frac, stepsize, sampler._gradient_evals, prop_rejects, prop_no_return, rmse, rmse_sq, msjd
+    steps = sampler._gradient_evals
+    print(f"AHMC({path_frac}): MSJD={msjd:8.3f};  leapfrog_steps={steps}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    return "ST-HMC", path_frac, stepsize, steps, prop_rejects, prop_no_return, rmse, rmse_sq, msjd
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
@@ -174,7 +177,7 @@ def model_steps():
     poisson_glmm = ('glmm-poisson', [0.008, 0.004])
     covid = ('covid19-imperial-v2', [0.01])
     prophet = ('prophet', [0.0006, 0.0003])
-    return [normal , ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # [covid]
+    return [normal, eight_schools] # normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # [covid]
 
 def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
                            theta_hat, theta_sq_hat, seed):
@@ -209,9 +212,11 @@ def all_vs_nuts():
     stop_griping()
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
-    seeds = seed_rng.integers(low=0, high=2**32, size=5)
-    num_draws = 400
+    seeds = seed_rng.integers(low=0, high=2**32, size=10)
+    num_draws = 200
     print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
+    columns = ['model', 'sampler', 'stepsize', 'binom_prob', 'val_type', 'val'] 
+    df = pd.DataFrame(columns=columns)
     for program_name, stepsizes in model_steps():
         program_path = '../stan/' + program_name + '.stan'
         data_path = '../stan/' + program_name + '.json'
@@ -222,14 +227,19 @@ def all_vs_nuts():
         print(f"# unconstrained parameters = {num_unc_params}")
         print(f"NUTS: adapted step size = {adapted_stepsize}")
         for stepsize in [adapted_stepsize, adapted_stepsize / 2]:
+            step_scale = "1" if stepsize==adapted_stepsize else "1/2"
             print(f"\nSTEP SIZE = {stepsize}")
             for m, seed in enumerate(seeds):
                 DRAW_INDEX = 5  # chosen arbitrarily
                 nuts_draw_dict =  dict_draw(nuts_draws_dict, DRAW_INDEX + 10 * m)
                 nuts_draw_array = nuts_draws_array[DRAW_INDEX + 10 * m, :]
-                nuts_experiment(program_path=program_path, data=data_path,
-                                    inits=nuts_draw_dict, stepsize=stepsize, theta_hat=theta_hat,
-                                    theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
+                msjd, steps, rmse, rmse_sq =  nuts_experiment(program_path=program_path, data=data_path,
+                                                                  inits=nuts_draw_dict, stepsize=stepsize, theta_hat=theta_hat,
+                                                                  theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'Leapfrog Steps', steps
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'RMSE (param)', rmse
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'RMSE (param sq)', rmse_sq
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'MSJD', msjd
                 # progressive_experiment(program_path=program_path,
                 #                    data=data_path,
                 #                    theta_unc=np.array(nuts_draw_array),
@@ -239,17 +249,53 @@ def all_vs_nuts():
                 #                    theta_sq_hat=theta_sq_hat,
                 #                    seed=seed)   
                 for uturn_condition in ['distance']:  # 'sym_distance'
-                    for path_frac in [0.5, 0.625, 0.75, 0.825]:  # ['full', 'half', 'quarter'] for uniform
-                        turnaround_experiment(program_path=program_path,
-                                                data=data_path,
-                                                theta_unc=np.array(nuts_draw_array),
-                                                stepsize=stepsize,
-                                                num_draws=num_draws,
-                                                path_frac=path_frac,
-                                                theta_hat=theta_hat,
-                                                theta_sq_hat=theta_sq_hat,
-                                                seed=seed)
+                    for path_frac in [0.5, 0.625, 0.75]:  # ['full', 'half', 'quarter'] for uniform
+                        if path_frac == 0.5:
+                            binom_prob_rank = 'S'
+                        elif path_frac == 0.625:
+                            binom_prob_rank = 'M'
+                        elif path_frac == 0.75:
+                            binom_prob_rank = 'L'
+                        else:
+                            path_rank = "?"
+                        sampler_name, binom_prob, stepsize, steps, _, _, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
+                                                                                                                             data=data_path,
+                                                                                                                             theta_unc=np.array(nuts_draw_array),
+                                                                                                                             stepsize=stepsize,
+                                                                                                                             num_draws=num_draws,
+                                                                                                                             path_frac=path_frac,
+                                                                                                                             theta_hat=theta_hat,
+                                                                                                                             theta_sq_hat=theta_sq_hat,
+                                                                                                                             seed=seed)
+                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'Leapfrog Steps', steps
+                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'RMSE (param)', rmse
+                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'RMSE (param sq)', rmse_sq
+                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'MSJD', msjd
+    agg_df = df.groupby(['stepsize', 'val_type', 'binom_prob', 'sampler', 'model']).agg(
+        mean_val=('val', 'mean'),
+        std_val=('val', 'std'),
+        ).reset_index()
+    pd.set_option('display.max_rows', None)
+    print(agg_df)
+    df.to_csv('all-vs-nuts.csv', index=False)
+    agg_df.to_csv('all-vs-nuts-agg.csv', index=False)
+    return agg_df
 
+def plot_all_vs_nuts():
+    df = pd.read_csv('all-vs-nuts.csv')
+    rmse_df = df[df['val_type'] == 'RMSE (param)']
+    rmse_df['label'] = rmse_df.apply(lambda x: f"{x['sampler']}({x['stepsize']},{x['binom_prob']})", axis=1)
+    rmse_df['fill'] = rmse_df['sampler'].apply(lambda x: 'lightgrey' if x == 'NUTS' else 'white')
+    plot = (
+        pn.ggplot(rmse_df, pn.aes(x='label', y='val', color='stepsize', fill='fill'))
+        + pn.geom_boxplot()
+        + pn.scale_fill_manual(values={'lightgrey': 'lightgrey', 'white': 'white'})
+        + pn.facet_wrap('~model', scales='free', ncol=2)
+        + pn.theme(axis_text_x=pn.element_text(rotation=90, hjust=1),
+                       legend_position='none')
+        + pn.labs(x='Sampler(step size fraction, binomial prob)', y='RMSE (param)', title='RMSE (param) by model')
+    )
+    print(plot)
 
 def binomial_prob_plot():
     stop_griping()
@@ -363,6 +409,7 @@ def learning_curve():
 
 ### MAIN ###
 
-all_vs_nuts()
+# all_vs_nuts()
+plot_all_vs_nuts()
 # binomial_prob_plot()
 # learning_curve()
