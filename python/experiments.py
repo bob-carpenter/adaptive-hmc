@@ -293,9 +293,10 @@ def plot_all_vs_nuts():
         + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
         + pn.theme(axis_text_x=pn.element_text(rotation=90, hjust=1),
                        legend_position='none')
-        + pn.labs(x='Sampler', y='RMSE (param)', title='RMSE (param) by model and stepsize fraction')
+        + pn.labs(x='Sampler', y='RMSE (param sq)', title='RMSE (param sq) by model and stepsize fraction')
     )
-    print(plot)
+    plot.save(filename='binomial_prob_steps_plot.pdf', width=16, height=6)
+    # print(plot)
 
 def binomial_prob_plot():
     stop_griping()
