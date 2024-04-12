@@ -177,7 +177,7 @@ def model_steps():
     poisson_glmm = ('glmm-poisson', [0.008, 0.004])
     covid = ('covid19-imperial-v2', [0.01])
     prophet = ('prophet', [0.0006, 0.0003])
-    return [normal, eight_schools, arK] # normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # [covid]
+    return [normal, ill_normal, corr_normal, eight_schools, arK, hmm, lotka_volterra, garch] # normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # [covid]
 
 def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
                            theta_hat, theta_sq_hat, seed):
@@ -227,7 +227,7 @@ def all_vs_nuts():
         print(f"# unconstrained parameters = {num_unc_params}")
         print(f"NUTS: adapted step size = {adapted_stepsize}")
         for stepsize in [adapted_stepsize, adapted_stepsize / 2]:
-            step_scale = "1" if stepsize==adapted_stepsize else "1/2"
+            step_scale = "step 1" if stepsize==adapted_stepsize else "step 1/2"
             print(f"\nSTEP SIZE = {stepsize}")
             for m, seed in enumerate(seeds):
                 DRAW_INDEX = 5  # chosen arbitrarily
@@ -267,10 +267,10 @@ def all_vs_nuts():
                                                                                                                              theta_hat=theta_hat,
                                                                                                                              theta_sq_hat=theta_sq_hat,
                                                                                                                              seed=seed)
-                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'Leapfrog Steps', steps
-                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'RMSE (param)', rmse
-                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'RMSE (param sq)', rmse_sq
-                        df.loc[len(df)] = program_name, "ST-B", step_scale, binom_prob_rank, 'MSJD', msjd
+                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'Leapfrog Steps', steps
+                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'RMSE (param)', rmse
+                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'RMSE (param sq)', rmse_sq
+                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'MSJD', msjd
     agg_df = df.groupby(['stepsize', 'val_type', 'binom_prob', 'sampler', 'model']).agg(
         mean_val=('val', 'mean'),
         std_val=('val', 'std'),
@@ -283,16 +283,17 @@ def all_vs_nuts():
 
 def plot_all_vs_nuts():
     df = pd.read_csv('all-vs-nuts.csv')
-    rmse_df = df[df['val_type'] == 'RMSE (param)']
-    rmse_df['label'] = rmse_df.apply(lambda x: f"{x['sampler']}({x['binom_prob']})", axis=1)
+    rmse_df = df[df['val_type'] == 'RMSE (param sq)']
+    rmse_df['label'] = rmse_df.apply(lambda x: 'NUTS' if x['sampler'] == 'NUTS' else f"ST-{x['binom_prob']}", axis=1)
     rmse_df['fill'] = rmse_df['sampler'].apply(lambda x: 'lightgrey' if x == 'NUTS' else 'white')
     plot = (
         pn.ggplot(rmse_df, pn.aes(x='label', y='val', color='sampler')) # fill='stepsize'
         + pn.geom_boxplot()
         + pn.facet_wrap('~ stepsize + model', scales='free', ncol=len(model_steps()))
+        + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
         + pn.theme(axis_text_x=pn.element_text(rotation=90, hjust=1),
                        legend_position='none')
-        + pn.labs(x='Sampler(step size fraction, binomial prob)', y='RMSE (param)', title='RMSE (param) by model')
+        + pn.labs(x='Sampler', y='RMSE (param)', title='RMSE (param) by model and stepsize fraction')
     )
     print(plot)
 
