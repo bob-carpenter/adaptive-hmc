@@ -163,21 +163,21 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
 
 def model_steps():
     normal = ('normal', [0.5, 0.25])# for 500: [0.36, 0.18])
-    corr_normal = ('correlated-normal', [0.12, 0.06])
-    ill_normal = ('ill-condition-normal', [0.1, 0.05])
-    eight_schools = ('eight-schools', [0.5, 0.25])
+    ill_normal = ('ill-normal', [0.1, 0.05])
+    corr_normal = ('corr-normal', [0.12, 0.06])
     irt = ('irt-2pl', [0.05, 0.025])
-    lotka_volterra = ('lotka-volterra', [0.018, 0.009])
-    arK = ('arK', [0.01, 0.005])
-    garch = ('garch', [0.16, 0.08])
+    poisson_glmm = ('glmm-poisson', [0.008, 0.004])
+    eight_schools = ('eight-schools', [0.5, 0.25])
     normal_mix = ('normal-mixture', [0.01, 0.005])
     hmm = ('hmm', [0.025, 0.0125])
-    pkpd = ('pkpd', [0.1, 0.05])
     arma = ('arma', [0.016, 0.008])
-    poisson_glmm = ('glmm-poisson', [0.008, 0.004])
-    covid = ('covid19-imperial-v2', [0.01])
+    garch = ('garch', [0.16, 0.08])
+    arK = ('arK', [0.01, 0.005])
+    pkpd = ('pkpd', [0.1, 0.05])
+    lotka_volterra = ('lotka-volterra', [0.018, 0.009])
     prophet = ('prophet', [0.0006, 0.0003])
-    return [normal, ill_normal, corr_normal, eight_schools, arK, hmm, lotka_volterra, garch] # normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # [covid]
+    covid = ('covid19-imperial-v2', [0.01])
+    return [normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # covid
 
 def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
                            theta_hat, theta_sq_hat, seed):
@@ -210,10 +210,11 @@ def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
 
 def all_vs_nuts():
     stop_griping()
+    num_seeds = 20
+    num_draws = 100
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
-    seeds = seed_rng.integers(low=0, high=2**32, size=10)
-    num_draws = 200
+    seeds = seed_rng.integers(low=0, high=2**32, size=num_seeds)
     print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
     columns = ['model', 'sampler', 'stepsize', 'binom_prob', 'val_type', 'val'] 
     df = pd.DataFrame(columns=columns)
@@ -281,9 +282,9 @@ def all_vs_nuts():
     agg_df.to_csv('all-vs-nuts-agg.csv', index=False)
     return agg_df
 
-def plot_all_vs_nuts():
+def plot_vs_nuts(val_type):
     df = pd.read_csv('all-vs-nuts.csv')
-    rmse_df = df[df['val_type'] == 'RMSE (param sq)']
+    rmse_df = df[df['val_type'] == val_type]
     rmse_df['label'] = rmse_df.apply(lambda x: 'NUTS' if x['sampler'] == 'NUTS' else f"ST-{x['binom_prob']}", axis=1)
     rmse_df['fill'] = rmse_df['sampler'].apply(lambda x: 'lightgrey' if x == 'NUTS' else 'white')
     plot = (
@@ -291,11 +292,12 @@ def plot_all_vs_nuts():
         + pn.geom_boxplot()
         + pn.facet_wrap('~ stepsize + model', scales='free', ncol=len(model_steps()))
         + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
+        + pn.expand_limits(y = 0)
         + pn.theme(axis_text_x=pn.element_text(rotation=90, hjust=1),
                        legend_position='none')
-        + pn.labs(x='Sampler', y='RMSE (param sq)', title='RMSE (param sq) by model and stepsize fraction')
+        + pn.labs(x='Sampler', y='RMSE (param sq)', title=(val_type + ' by model and stepsize fraction'))
     )
-    plot.save(filename='binomial_prob_steps_plot.pdf', width=16, height=6)
+    plot.save(filename='vs_nuts_' + val_type + '.pdf', width=24, height=6)
     # print(plot)
 
 def binomial_prob_plot():
@@ -353,7 +355,7 @@ def binomial_prob_plot():
     plot.save(filename='binomial_prob_steps_plot.pdf', width=8.5, height=5)
 
     
-def learning_curve():                
+def learning_curve_plot():                
     seed = 987599123
     stepsize = 0.25
     D = 100
@@ -409,8 +411,8 @@ def learning_curve():
 
 
 ### MAIN ###
-
 # all_vs_nuts()
-plot_all_vs_nuts()
+for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+    plot_vs_nuts(val_type)
 # binomial_prob_plot()
-# learning_curve()
+# learning_curve_plot()
