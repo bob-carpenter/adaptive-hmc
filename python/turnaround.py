@@ -8,10 +8,11 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
     Uniformly samples number of steps from 1 up to U-turn, flips
     momentum, then balances with reverse proposal probability.
     """
-    def __init__(self, model, stepsize, theta, rng, path_fraction,
+    def __init__(self, model, stepsize, theta, rng, path_frac,
                      max_leapfrog = 512):
         super().__init__(model, stepsize, rng)
-        self._path_fraction = path_fraction
+        self._path_fraction = path_frac
+        print(f"{path_frac=}")
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
@@ -37,11 +38,11 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def lower_step_bound(self, L):
-        if self._path_fraction == 'full':
+        if self._path_fraction == 0.5:  ### !!!! HACK !!!!!
             return 1
-        elif self._path_fraction == 'half':
+        elif self._path_fraction == 0.625:
             return L // 2
-        elif self._path_fraction == 'quarter':
+        elif self._path_fraction == 0.75:
             return 3 * L // 4
         else:
             raise ValueError(f"unknown path fraction: {self._path_fraction}")

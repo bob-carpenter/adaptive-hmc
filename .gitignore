@@ -168,12 +168,12 @@ cython_debug/
 # Stan compilations
 stan/arK
 stan/arma
-stan/correlated-normal
+stan/corr-normal
 stan/eight-schools
 stan/garch
 stan/glmm-poisson
 stan/hmm
-stan/ill-condition-normal
+stan/ill-normal
 stan/irt-2pl
 stan/lotka-volterra
 stan/normal-mixture

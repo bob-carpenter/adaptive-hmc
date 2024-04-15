@@ -1,4 +1,4 @@
-import turnaround_binomial as ta
+import turnaround as ta
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
@@ -181,7 +181,8 @@ def model_steps():
 
 def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
                            theta_hat, theta_sq_hat, seed):
-    model_bs = bs.StanModel(model_lib=program_path, data=data,
+    model_bs = bs.StanM
+    odel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
     rng = np.random.default_rng(seed)
     theta = model_bs.param_unconstrain(theta_unc)
@@ -268,10 +269,10 @@ def all_vs_nuts():
                                                                                                                              theta_hat=theta_hat,
                                                                                                                              theta_sq_hat=theta_sq_hat,
                                                                                                                              seed=seed)
-                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'Leapfrog Steps', steps
-                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'RMSE (param)', rmse
-                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'RMSE (param sq)', rmse_sq
-                        df.loc[len(df)] = program_name, "ST", step_scale, binom_prob_rank, 'MSJD', msjd
+                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'Leapfrog Steps', steps
+                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'RMSE (param)', rmse
+                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'RMSE (param sq)', rmse_sq
+                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'MSJD', msjd
     agg_df = df.groupby(['stepsize', 'val_type', 'binom_prob', 'sampler', 'model']).agg(
         mean_val=('val', 'mean'),
         std_val=('val', 'std'),
@@ -285,7 +286,7 @@ def all_vs_nuts():
 def plot_vs_nuts(val_type):
     df = pd.read_csv('all-vs-nuts.csv')
     rmse_df = df[df['val_type'] == val_type]
-    rmse_df['label'] = rmse_df.apply(lambda x: 'NUTS' if x['sampler'] == 'NUTS' else f"ST-{x['binom_prob']}", axis=1)
+    rmse_df['label'] = rmse_df.apply(lambda x: 'NUTS' if x['sampler'] == 'NUTS' else f"STU-{x['binom_prob']}", axis=1)
     rmse_df['fill'] = rmse_df['sampler'].apply(lambda x: 'lightgrey' if x == 'NUTS' else 'white')
     plot = (
         pn.ggplot(rmse_df, pn.aes(x='label', y='val', color='sampler')) # fill='stepsize'
