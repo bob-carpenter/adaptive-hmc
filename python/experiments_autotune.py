@@ -2,7 +2,7 @@ import numpy as np
 import os, sys, time
 import matplotlib.pyplot as plt
 
-from algorithms import DRHMC_Adaptive
+from algorithms import DRHMC_Adaptive_Autotune
 import util
 
 import logging
@@ -29,6 +29,7 @@ parser.add_argument('--nleap', type=int, default=40, help='number of leapfrog st
 parser.add_argument('--nsamples', type=int, default=1001, help='number of samples')
 parser.add_argument('--burnin', type=int, default=0, help='number of iterations for burn-in')
 parser.add_argument('--stepadapt', type=int, default=100, help='step size adaptation')
+parser.add_argument('--nleapadapt', type=int, default=200, help='trajectory length adaptation')
 parser.add_argument('--targetaccept', type=float, default=0.80, help='target acceptance')
 parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
 parser.add_argument('--dist', type=str, default='binomial', help='distribution for u-turn sampler')
@@ -141,17 +142,12 @@ comm.Barrier()
 
 
 #####################
-# Adaptive
-print("Run Adaptive sampler")
-if args.adaptl:
-    if args.dist=='uniform':
-        savefolder = f"{savepath}/adaptive/offset{args.offset:0.2f}/"
-    elif args.dist=='binomial':
-        savefolder = f"{savepath}/adaptive/pbinom{args.pbinom:0.2f}/"
-else:
-    savefolder = f"{savepath}/adaptive/nleap{args.nleap}/"
-if not bool(args.symmetric):
-    savefolder = f"{savefolder}"[:-1] + "-asymm/"
+# Autotune
+print("Run Autotune sampler")
+if args.dist=='uniform':
+    savefolder = f"{savepath}/autotune/offset{args.offset:0.2f}/"
+elif args.dist=='binomial':
+    savefolder = f"{savepath}/autotune/pbinom{args.pbinom:0.2f}/"
 
 if args.check_delayed & args.check_uturn:
     print("both checks are on, not possible")
@@ -173,11 +169,10 @@ print(f"Saving runs in folder : {savefolder}")
 # start running
 np.random.seed(0)
 #q0 = np.random.normal(np.zeros(D*nchains).reshape(nchains, D))[wrank]
-kernel = DRHMC_Adaptive(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=None,
+kernel = DRHMC_Adaptive_Autotune(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=5,
                    distribution=args.dist, offset=args.offset, p_binom=args.pbinom, symmetric=bool(args.symmetric))
 sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
-                        epsadapt=0., constant_trajectory=bool(args.constant_traj), #n_stepsize_adapt,
-                        adapt_delayed_trajectory = bool(args.adaptl),
+                        epsadapt=0., nleap_adapt=args.nleapadapt,
                         target_accept=target_accept, pfactor=args.pfactor, pthresh=args.pthresh,
                         check_delayed=args.check_delayed, check_uturn=args.check_uturn,
                         verbose=False)

@@ -2,7 +2,7 @@ import numpy as np
 import os, sys, time
 import matplotlib.pyplot as plt
 
-from dr_hmc import DRHMC_AdaptiveStepsize, DRHMC_AdaptiveStepsize_autotune, HMC_uturn, HMC
+from algorithms import DRHMC_AdaptiveStepsize, DRHMC_AdaptiveStepsize_autotune, HMC_uturn, HMC
 import util
 
 import logging
@@ -143,7 +143,7 @@ kernel = HMC_uturn(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=None,
                    distribution=args.dist, offset=args.offset, p_binom=args.pbinom, symmetric=bool(args.symmetric))
 sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
                         epsadapt=0., #n_stepsize_adapt,
-                        target_accept=target_accept, return_angles=True,
+                        target_accept=target_accept, 
                         verbose=False)
 
 print(f"Acceptance for Uturn HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
