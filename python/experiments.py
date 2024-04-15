@@ -162,7 +162,7 @@ def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 def model_steps():
-    normal = ('normal', [0.5, 0.25])# for 500: [0.36, 0.18])
+    normal = ('normal', [0.5, 0.25])  # for 500: [0.36, 0.18])
     ill_normal = ('ill-normal', [0.1, 0.05])
     corr_normal = ('corr-normal', [0.12, 0.06])
     irt = ('irt-2pl', [0.05, 0.025])
@@ -296,70 +296,70 @@ def plot_vs_nuts(val_type):
         + pn.expand_limits(y = 0)
         + pn.theme(axis_text_x=pn.element_text(rotation=90, hjust=1),
                        legend_position='none')
-        + pn.labs(x='Sampler', y='RMSE (param sq)', title=(val_type + ' by model and stepsize fraction'))
+        + pn.labs(x='Sampler', y=val_type) # , title=(val_type + ' by model and stepsize fraction'))
     )
     plot.save(filename='vs_nuts_' + val_type + '.pdf', width=24, height=6)
     # print(plot)
 
-def binomial_prob_plot():
+def uniform_length_plot():
     stop_griping()
-    num_seeds = 400
+    num_seeds = 100
     num_draws = 100
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
     seeds = seed_rng.integers(low=0, high=2**32, size=num_seeds)
     print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
-    program_name, stepsizes = 'normal', [0.5, 0.25]  # for 500 dims: [0.36, 0.18])
+    program_name, stepsizes = 'eight-schools', [0.5, 0.25]
     program_path = '../stan/' + program_name + '.stan'
     data_path = '../stan/' + program_name + '.json'
     nuts_draws_dict, nuts_draws_array, theta_hat, theta_sq_hat, adapted_metric, adapted_stepsize = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
-    columns = ['stepsize', 'binom_prob', 'val_type', 'val']   # val_type in ['steps', 'reject', 'no_return', 'rmse', 'rmse_sq']
+    columns = ['stepsize', 'path_frac', 'val_type', 'val']   # val_type in ['steps', 'reject', 'no_return', 'rmse', 'rmse_sq']
     df = pd.DataFrame(columns=columns)
     for stepsize in stepsizes:
         print(f"STEP SIZE: {stepsize}")
         for m, seed in enumerate(seeds):
             print(f"{m=}  {seed=}")
-            idx = 100 * m
+            idx = 10 * m
             nuts_draw_dict =  dict_draw(nuts_draws_dict, idx)
             nuts_draw_array = nuts_draws_array[idx, :]
-            for binom_prob in [0.1, 0.2, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9]:
-                sampler, binom_prob, stepsize, steps, reject, no_return, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
+            for path_frac in [0, 0.1, 0.2, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9]:
+                sampler, path_frac, stepsize, steps, reject, no_return, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
                                                                                                                          data=data_path,
                                                                                                                          theta_unc=np.array(nuts_draw_array),
                                                                                                                          stepsize=stepsize,
                                                                                                                          num_draws=num_draws,
-                                                                                                                         path_frac=binom_prob,
+                                                                                                                         path_frac=path_frac,
                                                                                                                          theta_hat=theta_hat,
                                                                                                                          theta_sq_hat=theta_sq_hat,
                                                                                                                          seed=seed)
 
-                df.loc[len(df)] = stepsize, binom_prob, 'Leapfrog Steps', steps
-                df.loc[len(df)] = stepsize, binom_prob, 'Reject', reject
-                df.loc[len(df)] = stepsize, binom_prob, 'No Return', no_return
-                df.loc[len(df)] = stepsize, binom_prob, 'RMSE (param)', rmse
-                df.loc[len(df)] = stepsize, binom_prob, 'RMSE (param sq)', rmse_sq
-                df.loc[len(df)] = stepsize, binom_prob, 'MSJD', msjd
+                df.loc[len(df)] = stepsize, path_frac, 'Leapfrog Steps', steps
+                df.loc[len(df)] = stepsize, path_frac, 'Reject', reject
+                df.loc[len(df)] = stepsize, path_frac, 'No Return', no_return
+                df.loc[len(df)] = stepsize, path_frac, 'RMSE (param)', rmse
+                df.loc[len(df)] = stepsize, path_frac, 'RMSE (param sq)', rmse_sq
+                df.loc[len(df)] = stepsize, path_frac, 'MSJD', msjd
 
-    agg_df = df.groupby(['stepsize', 'val_type', 'binom_prob']).agg(
+    agg_df = df.groupby(['stepsize', 'val_type', 'path_frac']).agg(
         mean_val=('val', 'mean'),
         #    std_val=('val', 'std'),
         lower_quantile=('val', lambda x: x.quantile(0.1)),  # For 80% CI, lower bound
         upper_quantile=('val', lambda x: x.quantile(0.9))   # For 80% CI, upper bound
         ).reset_index()
 
-    plot = (pn.ggplot(agg_df, pn.aes(x='binom_prob', y='mean_val', ymin='lower_quantile', ymax='upper_quantile', group='stepsize', color='factor(stepsize)'))
+    plot = (pn.ggplot(agg_df, pn.aes(x='path_frac', y='mean_val', ymin='lower_quantile', ymax='upper_quantile', group='stepsize', color='factor(stepsize)'))
                 + pn.geom_line(size=0.5)
                 + pn.scale_x_continuous(limits=(0, 1), breaks = [0, 0.25, 0.5, 0.75, 1], labels=["0", "1/4", "1/2", "3/4", "1"])
                 + pn.coord_fixed(ratio=1)
-                + pn.labs(y = '', x='Binomial Success Probability', color="Step Size")
+                + pn.labs(y = '', x='Uniform Path Fraction', color="Step Size")
                 + pn.facet_wrap('~ val_type', scales='free_y', ncol=3))
-    plot.save(filename='binomial_prob_steps_plot.pdf', width=8.5, height=5)
+    plot.save(filename='uniform_prob_steps_plot.pdf', width=8.5, height=5)
 
     
 def learning_curve_plot():                
     seed = 987599123
     stepsize = 0.25
-    D = 100
+    D = 400
     program_name = 'normal'
     program_path = '../stan/' + program_name + '.stan'
     data_path = '../stan/' + program_name + '.json'
@@ -369,7 +369,7 @@ def learning_curve_plot():
     theta0 = rng.normal(loc=0, scale=1, size=D)
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta0,
-                                       path_frac=0.6, rng=rng)
+                                       path_frac=0.5, rng=rng)
     N = 1_000_000
     draws = sampler.sample_constrained(N)
     cumsum_draws = np.cumsum(draws, axis=0)
@@ -379,7 +379,7 @@ def learning_curve_plot():
 
     draws_sq = draws**2
     cumsum_draws_sq = np.cumsum(draws_sq, axis=0)
-    abs_err_sq = np.abs(cumsum_draws_sq / divisors - 1)  # expected value is E[ChiSquare(1)] = 1
+    abs_err_sq = np.abs(cumsum_draws_sq / divisors - 1)  # E[ChiSquare(1)] = 1
     avg_abs_err_sq = np.mean(abs_err_sq, axis=1)
 
     errs = np.concatenate([avg_abs_err, avg_abs_err_sq])
@@ -401,8 +401,8 @@ def learning_curve_plot():
         })
     plot = (pn.ggplot(df, pn.aes(x='iteration', y='E[|err|]'))
                 + pn.geom_line()
-                + pn.scale_x_log10(limits=(10,N)) # breaks=[10**0, 10**1, 10**2, 10**3, 10**4], limits=(10**0, 10**4))
-                + pn.scale_y_log10() # breaks=[10**-6, 10**-5, 10**-4, 10**-3, 10**-2, 10**-1, 10**0], limits=(10**-6, 10**0))
+                + pn.scale_x_log10(limits=(10,N))
+                + pn.scale_y_log10()
                 + pn.geom_segment(data=lines_df,
                                       mapping=pn.aes(x='x', y='y', xend='xend', yend='yend'),
                                       linetype='dotted')
@@ -413,7 +413,7 @@ def learning_curve_plot():
 
 ### MAIN ###
 # all_vs_nuts()
-for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-    plot_vs_nuts(val_type)
-# binomial_prob_plot()
+# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+#     plot_vs_nuts(val_type)
+uniform_length_plot()
 # learning_curve_plot()

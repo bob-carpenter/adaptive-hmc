@@ -38,14 +38,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def lower_step_bound(self, L):
-        if self._path_fraction == 0.5:  ### !!!! HACK !!!!!
-            return 1
-        elif self._path_fraction == 0.625:
-            return L // 2
-        elif self._path_fraction == 0.75:
-            return 3 * L // 4
-        else:
-            raise ValueError(f"unknown path fraction: {self._path_fraction}")
+        return int(np.floor(self._path_fraction * L))
 
     def draw(self):
         try:
