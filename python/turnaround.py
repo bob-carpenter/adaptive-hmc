@@ -3,16 +3,10 @@ import hmc
 import traceback
 
 class TurnaroundSampler(hmc.HmcSamplerBase):
-    """Adaptive HMC algorithm for selecting number of leapfrog steps.
-
-    Uniformly samples number of steps from 1 up to U-turn, flips
-    momentum, then balances with reverse proposal probability.
-    """
     def __init__(self, model, stepsize, theta, rng, path_frac,
-                     max_leapfrog = 512):
+                     max_leapfrog = 1024):
         super().__init__(model, stepsize, rng)
         self._path_fraction = path_frac
-        print(f"{path_frac=}")
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
@@ -29,7 +23,8 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         for n in range(self._max_leapfrog_steps):
             theta_next, rho_next = self.leapfrog_step(theta_next, rho_next)
             log_joint_next = self.log_joint(theta_next, rho_next)
-            if np.abs(log_joint_theta_rho - log_joint_next) > 10.0:
+            if np.abs(log_joint_theta_rho - log_joint_next) > 50.0:
+                self._divergences += 1
                 return n + 1
             distance = np.sum((theta_next - theta)**2)
             if distance <= old_distance:
@@ -38,7 +33,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def lower_step_bound(self, L):
-        return int(np.floor(self._path_fraction * L))
+        return np.min(1, int(np.floor(self._path_fraction * L)))
 
     def draw(self):
         try:
@@ -53,12 +48,13 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             rho_star = -rho_star
             Lstar = self.uturn(theta_star, rho_star)
             LBstar = self.lower_step_bound(Lstar)
-            self._gradient_evals += L + Lstar - N    # DIAGNOSTIC
             self._fwds.append(L)                     # DIAGNOSTIC
             self._bks.append(Lstar)                  # DIAGNOSTIC
             if not(LBstar <= N and N <= Lstar):
+                self._gradient_evals += L            # DIAGNOSTIC
                 self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return
+            self._gradient_evals += L + Lstar - N    # DIAGNOSTIC
             log_accept = (
                 self.log_joint(theta_star, rho_star) - np.log(Lstar - LBstar)
                 - (log_joint_theta_rho - np.log(L - LB))

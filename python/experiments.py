@@ -1,4 +1,4 @@
-import turnaround as ta
+import turnaround_binomial as ta
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
@@ -283,7 +283,7 @@ def all_vs_nuts():
     agg_df.to_csv('all-vs-nuts-agg.csv', index=False)
     return agg_df
 
-def plot_vs_nuts(val_type):
+def vs_nuts_plot(val_type):
     df = pd.read_csv('all-vs-nuts.csv')
     rmse_df = df[df['val_type'] == val_type]
     rmse_df['label'] = rmse_df.apply(lambda x: 'NUTS' if x['sampler'] == 'NUTS' else f"STU-{x['binom_prob']}", axis=1)
@@ -357,9 +357,9 @@ def uniform_length_plot():
 
     
 def learning_curve_plot():                
-    seed = 987599123
+    seed = 456987123
     stepsize = 0.25
-    D = 400
+    D = 100
     program_name = 'normal'
     program_path = '../stan/' + program_name + '.stan'
     data_path = '../stan/' + program_name + '.json'
@@ -369,8 +369,8 @@ def learning_curve_plot():
     theta0 = rng.normal(loc=0, scale=1, size=D)
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta0,
-                                       path_frac=0.5, rng=rng)
-    N = 1_000_000
+                                       path_frac=0.6, rng=rng)
+    N = 100_000
     draws = sampler.sample_constrained(N)
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
@@ -414,6 +414,6 @@ def learning_curve_plot():
 ### MAIN ###
 # all_vs_nuts()
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-#     plot_vs_nuts(val_type)
-uniform_length_plot()
-# learning_curve_plot()
+#     vs_nuts_plot(val_type)
+# uniform_length_plot()
+learning_curve_plot()
