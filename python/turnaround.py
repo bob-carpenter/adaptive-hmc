@@ -33,7 +33,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def lower_step_bound(self, L):
-        return np.min(1, int(np.floor(self._path_fraction * L)))
+        return 1 # np.max(1, int(np.floor(self._path_fraction * L)))
 
     def draw(self):
         try:
@@ -50,7 +50,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             LBstar = self.lower_step_bound(Lstar)
             self._fwds.append(L)                     # DIAGNOSTIC
             self._bks.append(Lstar)                  # DIAGNOSTIC
-            if not(LBstar <= N and N <= Lstar):
+            if not(LBstar <= N and N < Lstar):
                 self._gradient_evals += L            # DIAGNOSTIC
                 self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return

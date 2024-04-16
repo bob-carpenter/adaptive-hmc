@@ -1,4 +1,4 @@
-import turnaround_binomial as ta
+import turnaround as ta
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
@@ -370,7 +370,7 @@ def learning_curve_plot():
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta0,
                                        path_frac=0.6, rng=rng)
-    N = 100_000
+    N = 1_000_000
     draws = sampler.sample_constrained(N)
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)

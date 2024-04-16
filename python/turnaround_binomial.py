@@ -34,12 +34,12 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def sample_length(self, L):
-        n = self._rng.binomial(L, self._success_prob)  # TODO(carpenter): L - 1?
+        n = self._rng.binomial(L - 1, self._success_prob)
         return n
 
     def length_log_prob(self, N, L):
-        if 0 <= N and N < L:  # TODO(carpenter): N <= L ??
-            logp = sp.stats.binom.logpmf(N, L, self._success_prob)
+        if 0 <= N and N < L:
+            logp = sp.stats.binom.logpmf(N, L - 1, self._success_prob)
             return logp
         else:
             return np.NINF
@@ -57,7 +57,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
             Lstar = self.uturn(theta_star, rho_star)
             self._fwds.append(L)                     # DIAGNOSTIC
             self._bks.append(Lstar)                  # DIAGNOSTIC
-            if not(1 <= N and N <= Lstar):
+            if not(1 <= N and N < Lstar):
                 self._gradient_evals += L            # DIAGNOSTIC
                 self._cannot_get_back_rejects += 1   # DIAGNOSTIC
                 return self._theta, self._rho        # cannot balance w/o return
