@@ -33,7 +33,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def lower_step_bound(self, L):
-        return 1 # np.max(1, int(np.floor(self._path_fraction * L)))
+        return np.max([1, int(np.floor(self._path_fraction * L))])
 
     def draw(self):
         try:

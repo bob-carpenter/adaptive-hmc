@@ -127,8 +127,6 @@ def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, dr
     msjd = np.mean(sq_jumps(parameter_draws))
     print(f"NUTS: MSJD={msjd:8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
     return msjd, leapfrog_steps, rmse, rmse_sq
-    # print(f"NUTS: Mean(param): {np.mean(parameter_draws, axis=0)}")
-    # print(f"NUTS: Mean(param^2): {np.mean(parameter_draws**2, axis=0)}")
 
 
 def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
@@ -301,7 +299,7 @@ def vs_nuts_plot(val_type):
     plot.save(filename='vs_nuts_' + val_type + '.pdf', width=24, height=6)
     # print(plot)
 
-def uniform_length_plot():
+def uniform_interval_plot():
     stop_griping()
     num_seeds = 100
     num_draws = 100
@@ -309,20 +307,21 @@ def uniform_length_plot():
     seed_rng = np.random.default_rng(meta_seed)
     seeds = seed_rng.integers(low=0, high=2**32, size=num_seeds)
     print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
-    program_name, stepsizes = 'eight-schools', [0.5, 0.25]
+    program_name = 'normal'
     program_path = '../stan/' + program_name + '.stan'
     data_path = '../stan/' + program_name + '.json'
     nuts_draws_dict, nuts_draws_array, theta_hat, theta_sq_hat, adapted_metric, adapted_stepsize = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
     columns = ['stepsize', 'path_frac', 'val_type', 'val']   # val_type in ['steps', 'reject', 'no_return', 'rmse', 'rmse_sq']
     df = pd.DataFrame(columns=columns)
-    for stepsize in stepsizes:
+    for stepsize in [adapted_stepsize, adapted_stepsize / 2]:
         print(f"STEP SIZE: {stepsize}")
         for m, seed in enumerate(seeds):
             print(f"{m=}  {seed=}")
             idx = 10 * m
             nuts_draw_dict =  dict_draw(nuts_draws_dict, idx)
             nuts_draw_array = nuts_draws_array[idx, :]
-            for path_frac in [0, 0.1, 0.2, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9]:
+            print(f"{nuts_draw_array=}")
+            for path_frac in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
                 sampler, path_frac, stepsize, steps, reject, no_return, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
                                                                                                                          data=data_path,
                                                                                                                          theta_unc=np.array(nuts_draw_array),
@@ -359,7 +358,7 @@ def uniform_length_plot():
 def learning_curve_plot():                
     seed = 189236576 # 456987123
     stepsize = 0.25
-    D = 10
+    D = 100
     program_name = 'normal'
     program_path = '../stan/' + program_name + '.stan'
     data_path = '../stan/' + program_name + '.json'
@@ -371,8 +370,12 @@ def learning_curve_plot():
                                        theta=theta0,
                                        path_frac=0.0, # full range unif=0, full range binomial=0.5
                                        rng=rng)
-    N = 1_000_000
+    N = 100_000
+
+    # choose one of next two to use sampler or take uniform draws
     draws = sampler.sample_constrained(N)
+    # draws = rng.normal(0, 1, size=(N, D))
+
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
     abs_err = np.abs(cumsum_draws) / divisors
@@ -415,6 +418,6 @@ def learning_curve_plot():
 ### MAIN ###
 # all_vs_nuts()
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-#     vs_nuts_plot(val_type)
-# uniform_length_plot()
-learning_curve_plot()
+#     vs_nuts_plot(val_type)u
+uniform_interval_plot()
+# learning_curve_plot()
