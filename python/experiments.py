@@ -357,9 +357,9 @@ def uniform_length_plot():
 
     
 def learning_curve_plot():                
-    seed = 456987123
+    seed = 189236576 # 456987123
     stepsize = 0.25
-    D = 100
+    D = 10
     program_name = 'normal'
     program_path = '../stan/' + program_name + '.stan'
     data_path = '../stan/' + program_name + '.json'
@@ -369,7 +369,8 @@ def learning_curve_plot():
     theta0 = rng.normal(loc=0, scale=1, size=D)
     sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta0,
-                                       path_frac=0.6, rng=rng)
+                                       path_frac=0.0, # full range unif=0, full range binomial=0.5
+                                       rng=rng)
     N = 1_000_000
     draws = sampler.sample_constrained(N)
     cumsum_draws = np.cumsum(draws, axis=0)
