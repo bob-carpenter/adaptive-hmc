@@ -85,7 +85,7 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            # adapt_delta=0.95,
-                           chains=1, iter_warmup=5_000, iter_sampling=20_000,
+                           chains=1, iter_warmup=10_000, iter_sampling=40_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     N = metadata_columns(fit)
@@ -175,7 +175,7 @@ def model_steps():
     lotka_volterra = ('lotka-volterra', [0.018, 0.009])
     prophet = ('prophet', [0.0006, 0.0003])
     covid = ('covid19-imperial-v2', [0.01])
-    return [normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra, prophet] # covid
+    return [normal, ill_normal, corr_normal, irt, poisson_glmm, eight_schools, normal_mix, hmm, arma, garch, arK, pkpd, lotka_volterra] # prophet, covid
 
 def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
                            theta_hat, theta_sq_hat, seed):
@@ -231,8 +231,10 @@ def all_vs_nuts():
             print(f"\nSTEP SIZE = {stepsize}")
             for m, seed in enumerate(seeds):
                 DRAW_INDEX = 5  # chosen arbitrarily
-                nuts_draw_dict =  dict_draw(nuts_draws_dict, DRAW_INDEX + 10 * m)
-                nuts_draw_array = nuts_draws_array[DRAW_INDEX + 10 * m, :]
+                DRAW_MULTIPLIER = 10  # also arbitrary
+                idx = DRAW_INDEX + DRAW_MULTIPLIER * m
+                nuts_draw_dict =  dict_draw(nuts_draws_dict, idx)
+                nuts_draw_array = nuts_draws_array[idx, :]
                 msjd, steps, rmse, rmse_sq =  nuts_experiment(program_path=program_path, data=data_path,
                                                                   inits=nuts_draw_dict, stepsize=stepsize, theta_hat=theta_hat,
                                                                   theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
@@ -249,15 +251,7 @@ def all_vs_nuts():
                 #                    theta_sq_hat=theta_sq_hat,
                 #                    seed=seed)   
                 for uturn_condition in ['distance']:  # 'sym_distance'
-                    for path_frac in [0.5, 0.625, 0.75]:  # ['full', 'half', 'quarter'] for uniform
-                        if path_frac == 0.5:
-                            binom_prob_rank = 'S'
-                        elif path_frac == 0.625:
-                            binom_prob_rank = 'M'
-                        elif path_frac == 0.75:
-                            binom_prob_rank = 'L'
-                        else:
-                            path_rank = "?"
+                    for path_frac, binom_prob_rank in zip([0.0, 0.3, 0.5, 0.7], ['S', 'M', 'L', 'XL']): 
                         sampler_name, binom_prob, stepsize, steps, _, _, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
                                                                                                                              data=data_path,
                                                                                                                              theta_unc=np.array(nuts_draw_array),
@@ -301,7 +295,7 @@ def vs_nuts_plot(val_type):
 
 def uniform_interval_plot():
     stop_griping()
-    num_seeds = 100
+    num_seeds = 200
     num_draws = 100
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
@@ -313,14 +307,13 @@ def uniform_interval_plot():
     nuts_draws_dict, nuts_draws_array, theta_hat, theta_sq_hat, adapted_metric, adapted_stepsize = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
     columns = ['stepsize', 'path_frac', 'val_type', 'val']   # val_type in ['steps', 'reject', 'no_return', 'rmse', 'rmse_sq']
     df = pd.DataFrame(columns=columns)
-    for stepsize in [adapted_stepsize, adapted_stepsize / 2]:
+    for stepsize in [0.36, 0.18]:
         print(f"STEP SIZE: {stepsize}")
         for m, seed in enumerate(seeds):
-            print(f"{m=}  {seed=}")
+            print(f"\n{m=}  {seed=}")
             idx = 10 * m
             nuts_draw_dict =  dict_draw(nuts_draws_dict, idx)
             nuts_draw_array = nuts_draws_array[idx, :]
-            print(f"{nuts_draw_array=}")
             for path_frac in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
                 sampler, path_frac, stepsize, steps, reject, no_return, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
                                                                                                                          data=data_path,
@@ -350,7 +343,8 @@ def uniform_interval_plot():
                 + pn.geom_line(size=0.5)
                 + pn.scale_x_continuous(limits=(0, 1), breaks = [0, 0.25, 0.5, 0.75, 1], labels=["0", "1/4", "1/2", "3/4", "1"])
                 + pn.coord_fixed(ratio=1)
-                + pn.labs(y = '', x='Uniform Path Fraction', color="Step Size")
+                + pn.expand_limits(y = 0)
+                + pn.labs(y = '', x='Lower Bound Fraction', color="Step Size")
                 + pn.facet_wrap('~ val_type', scales='free_y', ncol=3))
     plot.save(filename='uniform_prob_steps_plot.pdf', width=8.5, height=5)
 
@@ -417,7 +411,7 @@ def learning_curve_plot():
 
 ### MAIN ###
 # all_vs_nuts()
-# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-#     vs_nuts_plot(val_type)u
-uniform_interval_plot()
+for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+    vs_nuts_plot(val_type)
+# uniform_interval_plot()
 # learning_curve_plot()
