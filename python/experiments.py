@@ -9,6 +9,31 @@ import logging
 import traceback
 import warnings
 
+class NutsFit:
+    def __init__(self, draws_dict, draws_array, theta, theta_sd, theta_sq, theta_sq_sd, metric, stepsize):
+        self.stepsize_ = stepsize
+        self.draws_dict_ = draws_dict
+        self.draws_array_ = draws_array
+        self.theta_ = theta
+        self.theta_sd_ = theta_sd
+        self.theta_sq_ = theta_sq
+        self.theta_sq_sd_ = theta_sq_sd
+        self.metric_ = metric
+        self.num_unc_params_ = np.shape(self.draws_array_[1, :])[0]
+
+class GistFit:
+    def __init__(self, sampler, frac, stepsize, steps, prop_reject, prop_no_return, rmse, rmse_sq, msjd):
+            self.sampler_ = sampler
+            self.frac_ = frac
+            self.stepsize_ = stepsize
+            self.steps_ = steps
+            self.prop_reject_ = prop_reject
+            self.prop_no_return_ = prop_no_return
+            self.rmse_ = rmse
+            self.rmse_sq_ = rmse_sq
+            self.msjd_ = msjd
+
+
 def stop_griping():
     warnings.filterwarnings("ignore", message="Loading a shared object .* that has already been loaded.*")
     csp.utils.get_logger().setLevel(logging.ERROR)
@@ -85,17 +110,19 @@ def nuts_adapt(program_path, data_path, seed):
     fit = model.sample(data = data_path, seed=seed,
                            metric="unit_e", show_console=False,
                            # adapt_delta=0.95,
-                           chains=1, iter_warmup=10_000, iter_sampling=40_000,
+                           chains=1, iter_warmup=2_000, iter_sampling=10_000,
                            show_progress=False)
     thetas_dict = fit.stan_variables()
     N = metadata_columns(fit)
     theta_draws = fit.draws(concat_chains=True)[:, N:]
-    theta_hat = theta_draws.mean(axis=0)
-    theta_sq_hat = (theta_draws**2).mean(axis=0)
+    theta_mean = theta_draws.mean(axis=0)
+    theta_sd = theta_draws.std(axis=0)
+    theta_sq_mean = (theta_draws**2).mean(axis=0)
+    theta_sq_sd = (theta_draws**2).std(axis=0)
     metric = fit.metric
     stepsize = fit.step_size[0]
-    return thetas_dict, theta_draws, theta_hat, theta_sq_hat, metric, stepsize
-
+    nuts_fit = NutsFit(thetas_dict, theta_draws, theta_mean, theta_sd, theta_sq_mean, theta_sq_sd, metric, stepsize)
+    return nuts_fit
 
 def nuts(program_path, data_path, inits, stepsize, draws, seed):
     model = csp.CmdStanModel(stan_file = program_path)
@@ -118,38 +145,40 @@ def nuts(program_path, data_path, inits, stepsize, draws, seed):
 def root_mean_square_error(theta1, theta2):
     return np.sqrt(np.sum((theta1 - theta2)**2) / len(theta1))
 
-def nuts_experiment(program_path, data, inits, seed, theta_hat, theta_sq_hat, draws, stepsize):
+def nuts_experiment(program_path, data, inits, seed, theta, theta_sd, theta_sq, theta_sq_sd, draws, stepsize):
     parameter_draws, leapfrog_steps = nuts(program_path, data, inits, stepsize, draws, seed)
-    theta_hat_nuts = parameter_draws.mean(axis=0)
-    theta_sq_hat_nuts = (parameter_draws**2).mean(axis=0)
-    rmse = root_mean_square_error(theta_hat, theta_hat_nuts)
-    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_nuts)
+    theta_nuts = parameter_draws.mean(axis=0)
+    theta_sq_nuts = (parameter_draws**2).mean(axis=0)
+    rmse = root_mean_square_error(theta, theta_nuts)
+    rmse_sq = root_mean_square_error(theta_sq, theta_sq_nuts)
     msjd = np.mean(sq_jumps(parameter_draws))
     print(f"NUTS: MSJD={msjd:8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
     return msjd, leapfrog_steps, rmse, rmse_sq
 
 
-def turnaround_experiment(program_path, data, theta_unc, stepsize, num_draws,
-        path_frac, theta_hat, theta_sq_hat, seed):
+def gist_experiment(program_path, data, theta_unc, stepsize, num_draws,
+        frac, theta_hat, theta_sq_hat, seed):
     model_bs = bs.StanModel(model_lib=program_path, data=data,
                          capture_stan_prints=False)
     rng = np.random.default_rng(seed)
     theta = model_bs.param_unconstrain(theta_unc)
-    sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
+    sampler = ta.GistSampler(model=model_bs, stepsize=stepsize,
                                        theta=theta, rng=rng,
-                                       path_frac=path_frac)
+                                       frac=frac)
     constrained_draws = sampler.sample_constrained(num_draws)
     rejects, prop_rejects = num_rejects(constrained_draws)
     prop_no_return = sampler._cannot_get_back_rejects / num_draws
     prop_diverge = sampler._divergences / num_draws
     msjd = np.mean(sq_jumps(constrained_draws))
-    theta_hat_turnaround = constrained_draws.mean(axis=0)
-    theta_sq_hat_turnaround = (constrained_draws**2).mean(axis=0)
-    rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
-    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_turnaround)
+    theta_hat_gist = constrained_draws.mean(axis=0)
+    theta_sq_hat_gist = (constrained_draws**2).mean(axis=0)
+    rmse = root_mean_square_error(theta_hat, theta_hat_gist)
+    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_gist)
     steps = sampler._gradient_evals
-    print(f"AHMC({path_frac}): MSJD={msjd:8.3f};  leapfrog_steps={steps}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
-    return "ST-HMC", path_frac, stepsize, steps, prop_rejects, prop_no_return, rmse, rmse_sq, msjd
+    print(f"Gist({frac}): MSJD={msjd:8.3f};  leapfrog_steps={steps}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
+    gist_fit = GistFit("ST-HMC", frac, stepsize, steps, prop_rejects, prop_no_return, rmse, rmse_sq, msjd)
+    return gist_fit
+
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
     # scalar_draws_for_traceplot = constrained_draws[: , 0]
@@ -191,10 +220,10 @@ def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
     prop_no_return = sampler._cannot_get_back_rejects / num_draws
     prop_diverge = sampler._divergences / num_draws
     msjd = np.mean(sq_jumps(constrained_draws))
-    theta_hat_turnaround = constrained_draws.mean(axis=0)
-    theta_sq_hat_turnaround = (constrained_draws**2).mean(axis=0)
-    rmse = root_mean_square_error(theta_hat, theta_hat_turnaround)
-    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_turnaround)
+    theta_hat_gist = constrained_draws.mean(axis=0)
+    theta_sq_hat_gist = (constrained_draws**2).mean(axis=0)
+    rmse = root_mean_square_error(theta_hat, theta_hat_gist)
+    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_gist)
     print(f"PrAHMC: MSJD={msjd:8.3f};  leapfrog_steps={sampler._gradient_evals}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}")
     # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
     v = np.mean(constrained_draws**2, axis=0)
@@ -207,14 +236,11 @@ def progressive_experiment(program_path, data, theta_unc, stepsize, num_draws,
     # for n in range(10):
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
-def all_vs_nuts():
+def all_vs_nuts(num_seeds, num_draws, meta_seed):
     stop_griping()
-    num_seeds = 20
-    num_draws = 100
-    meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
     seeds = seed_rng.integers(low=0, high=2**32, size=num_seeds)
-    print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
+    print(f"NUM DRAWS: {num_draws}  NUM SEEDS: {num_seeds}")
     columns = ['model', 'sampler', 'stepsize', 'binom_prob', 'val_type', 'val'] 
     df = pd.DataFrame(columns=columns)
     for program_name, stepsizes in model_steps():
@@ -222,58 +248,45 @@ def all_vs_nuts():
         data_path = '../stan/' + program_name + '.json'
         print(f"\nMODEL: {program_path}")
         print("============================================================")
-        nuts_draws_dict, nuts_draws_array, theta_hat, theta_sq_hat, adapted_metric, adapted_stepsize = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
-        num_unc_params = np.shape(nuts_draws_array[1, :])[0]
-        print(f"# unconstrained parameters = {num_unc_params}")
-        print(f"NUTS: adapted step size = {adapted_stepsize}")
-        for stepsize in [adapted_stepsize, adapted_stepsize / 2]:
-            step_scale = "step 1" if stepsize==adapted_stepsize else "step 1/2"
+        nuts_fit = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
+        print(f"# unconstrained parameters = {nuts_fit.num_unc_params_}")
+        for stepsize, step_scale in zip([nuts_fit.stepsize_, nuts_fit.stepsize_ / 2], ['step 1', 'step 1/2']):
             print(f"\nSTEP SIZE = {stepsize}")
             for m, seed in enumerate(seeds):
                 DRAW_INDEX = 5  # chosen arbitrarily
                 DRAW_MULTIPLIER = 10  # also arbitrary
                 idx = DRAW_INDEX + DRAW_MULTIPLIER * m
-                nuts_draw_dict =  dict_draw(nuts_draws_dict, idx)
-                nuts_draw_array = nuts_draws_array[idx, :]
+                nuts_draw_dict =  dict_draw(nuts_fit.draws_dict_, idx)
+                nuts_draw_array = nuts_fit.draws_array_[idx, :]
                 msjd, steps, rmse, rmse_sq =  nuts_experiment(program_path=program_path, data=data_path,
-                                                                  inits=nuts_draw_dict, stepsize=stepsize, theta_hat=theta_hat,
-                                                                  theta_sq_hat=theta_sq_hat, draws=num_draws, seed=seed)
-                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'Leapfrog Steps', steps
-                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'RMSE (param)', rmse
-                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'RMSE (param sq)', rmse_sq
+                                                                  inits=nuts_draw_dict, stepsize=stepsize,
+                                                                  theta=nuts_fit.theta_, theta_sd=nuts_fit.theta_sd_,
+                                                                  theta_sq=nuts_fit.theta_sq_, theta_sq_sd=nuts_fit.theta_sq_sd_,
+                                                                  draws=num_draws, seed=seed)
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'Leapfrog Steps', steps,
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'RMSE (param)', rmse,
+                df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'RMSE (param sq)', rmse_sq,
                 df.loc[len(df)] = program_name, "NUTS", step_scale, "-", 'MSJD', msjd
-                # progressive_experiment(program_path=program_path,
-                #                    data=data_path,
-                #                    theta_unc=np.array(nuts_draw_array),
-                #                    stepsize=stepsize,
-                #                    num_draws=num_draws,
-                #                    theta_hat=theta_hat,
-                #                    theta_sq_hat=theta_sq_hat,
-                #                    seed=seed)   
-                for uturn_condition in ['distance']:  # 'sym_distance'
-                    for path_frac, binom_prob_rank in zip([0.0, 0.3, 0.5, 0.7], ['S', 'M', 'L', 'XL']): 
-                        sampler_name, binom_prob, stepsize, steps, _, _, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
-                                                                                                                             data=data_path,
-                                                                                                                             theta_unc=np.array(nuts_draw_array),
-                                                                                                                             stepsize=stepsize,
-                                                                                                                             num_draws=num_draws,
-                                                                                                                             path_frac=path_frac,
-                                                                                                                             theta_hat=theta_hat,
-                                                                                                                             theta_sq_hat=theta_sq_hat,
-                                                                                                                             seed=seed)
-                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'Leapfrog Steps', steps
-                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'RMSE (param)', rmse
-                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'RMSE (param sq)', rmse_sq
-                        df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'MSJD', msjd
+                for path_frac, binom_prob_rank in zip([0.0, 0.3, 0.5, 0.7], ['S', 'M', 'L', 'XL']):
+                    gist_fit = gist_experiment(program_path=program_path,
+                                                         data=data_path,
+                                                         theta_unc=np.array(nuts_draw_array),
+                                                         stepsize=stepsize,
+                                                         num_draws=num_draws,
+                                                         frac=path_frac,
+                                                         theta_hat=nuts_fit.theta_,
+                                                         theta_sq_hat=nuts_fit.theta_sq_,
+                                                         seed=seed)
+                    df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'Leapfrog Steps', gist_fit.steps_
+                    df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'RMSE (param)', gist_fit.rmse_
+                    df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'RMSE (param sq)', gist_fit.rmse_sq_
+                    df.loc[len(df)] = program_name, 'ST', step_scale, binom_prob_rank, 'MSJD', gist_fit.msjd_
     agg_df = df.groupby(['stepsize', 'val_type', 'binom_prob', 'sampler', 'model']).agg(
         mean_val=('val', 'mean'),
         std_val=('val', 'std'),
         ).reset_index()
-    pd.set_option('display.max_rows', None)
-    print(agg_df)
     df.to_csv('all-vs-nuts.csv', index=False)
     agg_df.to_csv('all-vs-nuts-agg.csv', index=False)
-    return agg_df
 
 def vs_nuts_plot(val_type):
     df = pd.read_csv('all-vs-nuts.csv')
@@ -288,11 +301,10 @@ def vs_nuts_plot(val_type):
         + pn.expand_limits(y = 0)
         + pn.theme(axis_text_x=pn.element_text(rotation=90, hjust=1),
                        legend_position='none')
-        + pn.labs(x='Sampler', y=val_type) # , title=(val_type + ' by model and stepsize fraction'))
+        + pn.labs(x='Sampler', y=val_type)
     )
     plot.save(filename='vs_nuts_' + val_type + '.pdf', width=24, height=6)
-    # print(plot)
-
+    
 def uniform_interval_plot():
     stop_griping()
     num_seeds = 200
@@ -300,45 +312,40 @@ def uniform_interval_plot():
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
     seeds = seed_rng.integers(low=0, high=2**32, size=num_seeds)
-    print(f"NUM DRAWS: {num_draws}  SEEDS: {seeds}")
-    program_name = 'normal'
-    program_path = '../stan/' + program_name + '.stan'
-    data_path = '../stan/' + program_name + '.json'
-    nuts_draws_dict, nuts_draws_array, theta_hat, theta_sq_hat, adapted_metric, adapted_stepsize = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
-    columns = ['stepsize', 'path_frac', 'val_type', 'val']   # val_type in ['steps', 'reject', 'no_return', 'rmse', 'rmse_sq']
+    print(f"NUM DRAWS: {num_draws}  NUM SEEDS: {num_seeds}")
+    program_path = '../stan/normal.stan'
+    data_path = '../stan/normal.json'
+    nuts_fit = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
+    columns = ['stepsize', 'path_frac', 'val_type', 'val']
     df = pd.DataFrame(columns=columns)
     for stepsize in [0.36, 0.18]:
         print(f"STEP SIZE: {stepsize}")
         for m, seed in enumerate(seeds):
             print(f"\n{m=}  {seed=}")
             idx = 10 * m
-            nuts_draw_dict =  dict_draw(nuts_draws_dict, idx)
-            nuts_draw_array = nuts_draws_array[idx, :]
+            nuts_draw_dict =  dict_draw(nuts_fit.draws_dict_, idx)
+            nuts_draw_array = np.array(nuts_fit.draws_array_[idx, :])
             for path_frac in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
-                sampler, path_frac, stepsize, steps, reject, no_return, rmse, rmse_sq, msjd = turnaround_experiment(program_path=program_path,
-                                                                                                                         data=data_path,
-                                                                                                                         theta_unc=np.array(nuts_draw_array),
-                                                                                                                         stepsize=stepsize,
-                                                                                                                         num_draws=num_draws,
-                                                                                                                         path_frac=path_frac,
-                                                                                                                         theta_hat=theta_hat,
-                                                                                                                         theta_sq_hat=theta_sq_hat,
-                                                                                                                         seed=seed)
-
-                df.loc[len(df)] = stepsize, path_frac, 'Leapfrog Steps', steps
-                df.loc[len(df)] = stepsize, path_frac, 'Reject', reject
-                df.loc[len(df)] = stepsize, path_frac, 'No Return', no_return
-                df.loc[len(df)] = stepsize, path_frac, 'RMSE (param)', rmse
-                df.loc[len(df)] = stepsize, path_frac, 'RMSE (param sq)', rmse_sq
-                df.loc[len(df)] = stepsize, path_frac, 'MSJD', msjd
-
+                gist_fit = gist_experiment(program_path=program_path,
+                                               data=data_path,
+                                               theta_unc=nuts_draw_array,
+                                               stepsize=stepsize,
+                                               num_draws=num_draws,
+                                               frac=path_frac,
+                                               theta_hat=nuts_fit.theta_,
+                                               theta_sq_hat=nuts_fit.theta_sq_,
+                                               seed=seed)
+                df.loc[len(df)] = stepsize, path_frac, 'Leapfrog Steps', gist_fit.steps_
+                df.loc[len(df)] = stepsize, path_frac, 'Reject', gist_fit.prop_reject_
+                df.loc[len(df)] = stepsize, path_frac, 'No Return', gist_fit.prop_no_return_
+                df.loc[len(df)] = stepsize, path_frac, 'RMSE (param)', gist_fit.rmse_
+                df.loc[len(df)] = stepsize, path_frac, 'RMSE (param sq)', gist_fit.rmse_sq_
+                df.loc[len(df)] = stepsize, path_frac, 'MSJD', gist_fit.msjd_
     agg_df = df.groupby(['stepsize', 'val_type', 'path_frac']).agg(
         mean_val=('val', 'mean'),
-        #    std_val=('val', 'std'),
-        lower_quantile=('val', lambda x: x.quantile(0.1)),  # For 80% CI, lower bound
-        upper_quantile=('val', lambda x: x.quantile(0.9))   # For 80% CI, upper bound
+        lower_quantile=('val', lambda x: x.quantile(0.1)),
+        upper_quantile=('val', lambda x: x.quantile(0.9))
         ).reset_index()
-
     plot = (pn.ggplot(agg_df, pn.aes(x='path_frac', y='mean_val', ymin='lower_quantile', ymax='upper_quantile', group='stepsize', color='factor(stepsize)'))
                 + pn.geom_line(size=0.5)
                 + pn.scale_x_continuous(limits=(0, 1), breaks = [0, 0.25, 0.5, 0.75, 1], labels=["0", "1/4", "1/2", "3/4", "1"])
@@ -353,17 +360,14 @@ def learning_curve_plot():
     seed = 189236576 # 456987123
     stepsize = 0.25
     D = 100
-    program_name = 'normal'
-    program_path = '../stan/' + program_name + '.stan'
-    data_path = '../stan/' + program_name + '.json'
-    model_bs = bs.StanModel(model_lib=program_path, data=data_path,
-                                capture_stan_prints=False)
+    program_path, data_path = '../stan/normal.stan', '../stan/normal.json'
+    model_bs = bs.StanModel(model_lib=program_path, data=data_path)
     rng = np.random.default_rng(seed)
-    theta0 = rng.normal(loc=0, scale=1, size=D)
-    sampler = ta.TurnaroundSampler(model=model_bs, stepsize=stepsize,
-                                       theta=theta0,
-                                       path_frac=0.0, # full range unif=0, full range binomial=0.5
-                                       rng=rng)
+    theta0 = rng.normal(loc=0, scale=1, size=D)  # draw from stationary distribution
+    sampler = ta.GistSampler(model=model_bs, stepsize=stepsize,
+                                 theta=theta0,
+                                 frac=0.0,
+                                 rng=rng)
     N = 100_000
 
     # choose one of next two to use sampler or take uniform draws
@@ -410,8 +414,8 @@ def learning_curve_plot():
 
 
 ### MAIN ###
-# all_vs_nuts()
-for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-    vs_nuts_plot(val_type)
-# uniform_interval_plot()
+# all_vs_nuts(num_seeds = 2, num_draws = 100, meta_seed = 57484894)
+# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+#     vs_nuts_plot(val_type)
+uniform_interval_plot()
 # learning_curve_plot()

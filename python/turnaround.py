@@ -2,11 +2,11 @@ import numpy as np
 import hmc
 import traceback
 
-class TurnaroundSampler(hmc.HmcSamplerBase):
-    def __init__(self, model, stepsize, theta, rng, path_frac,
+class GistSampler(hmc.HmcSamplerBase):
+    def __init__(self, model, stepsize, theta, rng, frac,
                      max_leapfrog = 1024):
         super().__init__(model, stepsize, rng)
-        self._path_fraction = path_frac
+        self._frac = frac
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
@@ -33,7 +33,7 @@ class TurnaroundSampler(hmc.HmcSamplerBase):
         return self._max_leapfrog_steps
 
     def lower_step_bound(self, L):
-        return np.max([1, int(np.floor(self._path_fraction * L))])
+        return np.max([1, int(np.floor(self._frac * L))])
 
     def draw(self):
         try:

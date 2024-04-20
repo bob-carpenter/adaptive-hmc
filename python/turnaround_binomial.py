@@ -3,13 +3,13 @@ import scipy as sp
 import hmc
 import traceback
 
-class TurnaroundSampler(hmc.HmcSamplerBase):
-    def __init__(self, model, stepsize, theta, rng, path_frac,
+class GistSampler(hmc.HmcSamplerBase):
+    def __init__(self, model, stepsize, theta, rng, frac,
                      max_leapfrog = 1024):
         super().__init__(model, stepsize, rng)
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
-        self._success_prob = path_frac
+        self._success_prob = frac
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
         self._fwds = []                    # DIAGNOSTIC
         self._bks = []                     # DIAGNOSTIC
