@@ -2,7 +2,7 @@ import numpy as np
 import os, sys, time
 import matplotlib.pyplot as plt
 
-from algorithms import  HMC_Uturn, HMC
+from algorithms import DRHMC_Adaptive2
 import util
 
 import logging
@@ -25,21 +25,27 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--exp', type=str, help='which experiment')
 parser.add_argument('-n', type=int, default=0, help='dimensionality or model number')
 #arguments for GSM
-parser.add_argument('--seed', type=int, default=999, help='seed')
 parser.add_argument('--nleap', type=int, default=40, help='number of leapfrog steps')
 parser.add_argument('--nsamples', type=int, default=1001, help='number of samples')
 parser.add_argument('--burnin', type=int, default=0, help='number of iterations for burn-in')
 parser.add_argument('--stepadapt', type=int, default=100, help='step size adaptation')
+parser.add_argument('--nleapadapt', type=int, default=100, help='step size adaptation')
 parser.add_argument('--targetaccept', type=float, default=0.80, help='target acceptance')
 parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
-parser.add_argument('--dist', type=str, default='uniform', help='distribution for u-turn sampler')
+parser.add_argument('--dist', type=str, default='binomial', help='distribution for u-turn sampler')
 parser.add_argument('--offset', type=float, default=0.5, help='offset for uturn sampler')
 parser.add_argument('--pbinom', type=float, default=0.6, help='binomial log-prob')
 parser.add_argument('--hmc', type=int, default=0, help='run hmc')
 parser.add_argument('--nuts', type=int, default=0, help='run nuts')
 parser.add_argument('--symmetric', type=int, default=1, help='u turn condition on both sides')
-parser.add_argument('--mode', type=str, default='angles', help='u turn condition')
+parser.add_argument('--constant_traj', type=int, default=0, help='constant trajectory for delayed')
+parser.add_argument('--adaptl', type=int, default=0, help='adapt trajectory length in delayed')
 parser.add_argument('--debug', type=int, default=0, help='constant trajectory for delayed')
+parser.add_argument('--check_delayed', type=int, default=0, help='constant trajectory for delayed')
+parser.add_argument('--check_uturn', type=int, default=0, help='constant trajectory for delayed')
+parser.add_argument('--pfactor', type=int, default=1, help='pfactor')
+parser.add_argument('--pthresh', type=float, default=0., help='threshold for probability')
+parser.add_argument('--mode', type=str, default='angles', help='u turn condition')
 #arguments for path name
 parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
 
@@ -86,9 +92,6 @@ if debug:
 
 ###################################
 # NUTS
-np.random.seed(999)
-idx = np.random.randint(0, ref_samples[..., 0].size, wsize)
-inits = ref_samples.reshape(-1, D)[idx]
 if wrank == 0:
     savefolder = f"{savepath}/nuts/"
     if args.nuts == 0 :
@@ -108,14 +111,13 @@ if wrank == 0:
         print("\nNow run NUTS on rank 0")
         stanfile, datafile = files
         cmd_model = csp.CmdStanModel(stan_file = stanfile)
-        sample = cmd_model.sample(data=datafile, chains=wsize, iter_sampling=nsamples-1,
-                                  seed = seed,
-                                  metric="unit_e",
-                                  adapt_delta=target_accept,
-                                  adapt_metric_window=0,
-                                  adapt_init_phase=n_stepsize_adapt//2,
-                                  adapt_step_size=n_stepsize_adapt//2,
-                                  show_console=False, show_progress=True, save_warmup=False)
+        sample = cmd_model.sample(data=datafile, chains=wsize, iter_sampling=nsamples-1, 
+                              metric="unit_e",
+                              adapt_delta=target_accept,
+                              adapt_metric_window=0,
+                              adapt_init_phase=n_stepsize_adapt//2,
+                              adapt_step_size=n_stepsize_adapt//2,
+                              show_console=False, show_progress=True, save_warmup=False)
         draws_pd = sample.draws_pd()
         if not debug:
             samples_nuts, leapfrogs_nuts = util.cmdstanpy_wrapper(draws_pd, savepath=f'{savefolder}/')
@@ -136,53 +138,63 @@ comm.Barrier()
 comm.Barrier()
 if wrank == 0 : print()
 step_size = comm.scatter(step_size, root=0)
-#q0 = comm.scatter(samples_nuts[:, 0], root=0)
-q0 = comm.scatter(inits, root=0)
+q0 = comm.scatter(samples_nuts[:, 0], root=0)
 q0 = model.param_unconstrain(q0)
 print(f"Step size in rank {wrank}: ", step_size)
 comm.Barrier()
 
 
 #####################
-# UTurn
-print("Run U-turn sampler")
-if args.mode == 'distance': folder = 'uturn-distance'
-elif args.mode == 'angles': folder = 'uturn'
-else:
-    print('Mode not recognized')
-    sys.exit()
-
+# Adaptive
+print("Run Adaptive sampler")
+algfolder = 'adaptive2'
 if args.dist=='uniform':
-    savefolder = f"{savepath}/{folder}/offset{args.offset:0.2f}/"
+    savefolder = f"{savepath}/{algfolder}/offset{args.offset:0.2f}/"
 elif args.dist=='binomial':
-    savefolder = f"{savepath}/{folder}/pbinom{args.pbinom:0.2f}/"
+    savefolder = f"{savepath}/{algfolder}/pbinom{args.pbinom:0.2f}/"
 if not bool(args.symmetric):
     savefolder = f"{savefolder}"[:-1] + "-asymm/"
+
+if args.check_delayed & args.check_uturn:
+    print("both checks are on, not possible")
+    sys.exit()
+if args.check_delayed:
+    savefolder = f"{savefolder}"[:-1] + "-delayedonly/"
+if args.check_uturn:
+    savefolder = f"{savefolder}"[:-1] + "-uturnonly/"
+if args.suffix != "":
+    savefolder = f"{savefolder}"[:-1] + f"-{args.suffix}/"
     
 os.makedirs(f'{savefolder}', exist_ok=True)
 print(f"Saving runs in folder : {savefolder}")
 
-# Start run
+# start running
 np.random.seed(0)
 #q0 = np.random.normal(np.zeros(D*nchains).reshape(nchains, D))[wrank]
-kernel = HMC_uturn(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=None,
-                   distribution=args.dist, offset=args.offset, p_binom=args.pbinom, symmetric=bool(args.symmetric), mode=args.mode)
+kernel = DRHMC_Adaptive2(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=5, max_nleap=1024,
+                         distribution=args.dist, offset=args.offset, p_binom=args.pbinom, symmetric=bool(args.symmetric),
+                         mode=args.mode)
 sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
-                        epsadapt=0., #n_stepsize_adapt,
+                        epsadapt=0., nleap_adapt=args.nleapadapt,
+                        constant_trajectory=bool(args.constant_traj), #n_stepsize_adapt,
+                        adapt_delayed_trajectory = bool(args.adaptl),
                         target_accept=target_accept, 
                         verbose=False)
 
-print(f"Acceptance for Uturn HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
-
+print(f"Acceptance for adaptive HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
 if not debug: sampler.save(path=f"{savefolder}", suffix=f"-{wrank}")
+
 samples_constrained = []
 for s in sampler.samples:
     samples_constrained.append(model.param_constrain(s))
+samples_constrained = np.array(samples_constrained)
 np.save(f"{savefolder}/samples_constrained-{wrank}", samples_constrained)
+
 comm.Barrier()
 
-samples_uturn = comm.gather(sampler.samples, root=0)
-accepts_uturn = comm.gather(sampler.accepts, root=0)
+#samples_adaptive = comm.gather(sampler.samples, root=0)
+samples_adaptive = comm.gather(samples_constrained, root=0)
+accepts_adaptive = comm.gather(sampler.accepts, root=0)
 stepsizes = comm.gather(kernel.step_size, root=0)
 if wrank == 0 :
     print(stepsizes)
@@ -196,11 +208,10 @@ if wrank == 0:
     #plt.hist(np.random.normal(0, 3, 100000), density=True, alpha=1, bins='auto', lw=2, histtype='step', color='k', label='Reference')
     plt.hist(ref_samples[..., 0].flatten(), density=True, alpha=1, bins='auto', lw=2, histtype='step', color='k', label='Reference')
     plt.hist(samples_nuts[..., 0].flatten(), density=True, alpha=0.5, bins='auto', label='NUTS');
-    samples_uturn = np.stack(samples_uturn, axis=0)
-    plt.hist(samples_uturn[..., 0].flatten(), density=True, alpha=0.5, bins='auto', label='1step ADR-HMC');
+    samples_adaptive = np.stack(samples_adaptive, axis=0)
+    plt.hist(samples_adaptive[..., 0].flatten(), density=True, alpha=0.5, bins='auto', label='1step ADR-HMC');
     
     print("\nPlotting")
-    plt.title(f"{D-1} dimension funnel")
     plt.legend()
     plt.savefig('tmp.png')
     plt.savefig(f"{savefolder}/hist")
@@ -208,41 +219,8 @@ if wrank == 0:
 
     print()
     #print("Total accpetances for HMC : ", np.unique(np.stack(accepts_hmc), return_counts=True))
-    print("Total accpetances for adaptive HMC : ", np.unique(np.stack(accepts_uturn), return_counts=True))
+    print("Total accpetances for adaptive HMC : ", np.unique(np.stack(accepts_adaptive), return_counts=True))
 
 comm.Barrier()
-
-
-#####################
-# HMC
-if args.hmc:
-    print("Run HMC sampler")
-    np.random.seed(0)
-    #q0 = np.random.normal(np.zeros(D*nchains).reshape(nchains, D))[wrank]
-    kernel = HMC(D, lp, lp_g, mass_matrix=np.eye(D))
-    sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
-                            epsadapt=n_stepsize_adapt,
-                            target_accept=target_accept, 
-                            verbose=False)
-
-    print(f"Acceptance for Uturn HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
-    savefolder = f"{savepath}/hmc/nleap{args.nleap}/"
-    os.makedirs(f'{savefolder}', exist_ok=True)
-    if not debug: sampler.save(path=f"{savefolder}", suffix=f"-{wrank}")
-    samples_constrained = []
-    for s in sampler.samples:
-        samples_constrained.append(model.param_constrain(s))
-    np.save(f"{savefolder}/samples_constrained-{wrank}", samples_constrained)
-
-    comm.Barrier()
-    samples_hmc = comm.gather(sampler.samples, root=0)
-    accepts_hmc = comm.gather(sampler.accepts, root=0)
-    stepsizes = comm.gather(kernel.step_size, root=0)
-    if wrank == 0 :
-        print(stepsizes)
-        np.save(f'{savefolder}/stepsize', stepsizes)
-    comm.Barrier()
-
-    
 
 sys.exit()
