@@ -17,14 +17,15 @@ To replicate the results and plots in the paper, all you need is a single Python
 > python3 experiments.py
 ```
 
-We have tagged the repository with `arxiv-v1` if you want to exactly reproduce the state of the repository at the point the paper was submitted.  Exactly reproducing our results will also require the same C++ toolchain and settings and the same operating system and version (otherwise small details of floating point behavior or library function behavior may vary).  The results should replicate on different platforms using different choices of random seeds.
+To exactly reproduce the state of the repository at the point the paper was submitted check out tag `arxiv-v1`.  Exactly reproducing the paper's results will also require the same C++ toolchain and settings and the same operating system and version (otherwise small details of floating point behavior or library function behavior may vary).  The results should replicate on different platforms using different choices of random seeds.
 
 You'll need the following packages:
 
 * [`cmdstanpy`](https://cmdstanpy.readthedocs.io/en/v1.2.0/)
-* [`bridgestan'`](https://roualdes.github.io/bridgestan/latest/)
+* [`bridgestan`](https://roualdes.github.io/bridgestan/latest/)
 
-as well as `numpy` and `scipy` and `plotnine`.  The CmdStanPy and BridgeStan documentation (to which the above links point), have detailed installation instructions, which require a relatively up to date C++ toolchain as that is what Stan targets for code generation.
+as well as `numpy` and `scipy` for math, `pandas` for data frame manipulatiion, and `plotnine` for plotting.  The CmdStanPy and BridgeStan documentation (to which the above links point), have detailed installation instructions, which require a relatively up to date C++ toolchain in order to compile the code Stan generates.
+
 
 ## Code
 
