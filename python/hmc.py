@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class HmcSamplerBase:
     def __init__(self, model, stepsize, rng):
         self._model = model
@@ -26,17 +27,17 @@ class HmcSamplerBase:
         for _ in range(numsteps):
             theta, rho = self.leapfrog_step(theta, rho)
         return theta, rho
-    
+
     def log_joint(self, theta, rho):
         try:
-            return self._model.log_density(theta) - 0.5 * sum(rho**2)
+            return self._model.log_density(theta) - 0.5 * sum(rho ** 2)
         except ExceptionType as e:
             return np.NINF
 
     def sample(self, M):
         D = self._model.param_unc_num()
         thetas = np.empty((M, D), dtype=np.float64)
-        thetas[0, :] = self._theta;
+        thetas[0, :] = self._theta
         for m in range(1, M):
             thetas[m, :], _ = self.draw()
         return thetas
