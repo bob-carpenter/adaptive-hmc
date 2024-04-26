@@ -28,24 +28,22 @@ parser.add_argument('-n', type=int, default=0, help='dimensionality or model num
 parser.add_argument('--nleap', type=int, default=40, help='number of leapfrog steps')
 parser.add_argument('--nsamples', type=int, default=1001, help='number of samples')
 parser.add_argument('--burnin', type=int, default=0, help='number of iterations for burn-in')
-parser.add_argument('--stepadapt', type=int, default=100, help='step size adaptation')
+parser.add_argument('--stepadapt', type=int, default=0, help='step size adaptation')
+parser.add_argument('--nleapadapt', type=int, default=100, help='step size adaptation')
 parser.add_argument('--targetaccept', type=float, default=0.80, help='target acceptance')
 parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
 parser.add_argument('--dist', type=str, default='binomial', help='distribution for u-turn sampler')
 parser.add_argument('--offset', type=float, default=0.5, help='offset for uturn sampler')
 parser.add_argument('--pbinom', type=float, default=0.6, help='binomial log-prob')
 parser.add_argument('--hmc', type=int, default=0, help='run hmc')
-parser.add_argument('--nuts', type=int, default=1, help='run nuts')
-parser.add_argument('--symmetric', type=int, default=1, help='u turn condition on both sides')
+parser.add_argument('--nuts', type=int, default=0, help='run nuts')
 parser.add_argument('--constant_traj', type=int, default=0, help='constant trajectory for delayed')
-parser.add_argument('--adaptl', type=int, default=0, help='adapt trajectory length in delayed')
-parser.add_argument('--debug', type=int, default=0, help='constant trajectory for delayed')
-parser.add_argument('--check_delayed', type=int, default=0, help='constant trajectory for delayed')
-parser.add_argument('--check_uturn', type=int, default=0, help='constant trajectory for delayed')
-parser.add_argument('--pfactor', type=int, default=1, help='pfactor')
-parser.add_argument('--pthresh', type=float, default=0., help='threshold for probability')
-#arguments for path name
+parser.add_argument('--min_nleap', type=int, default=5, help='minimum leapfrog steps')
+parser.add_argument('--n_lbfgs', type=int, default=10, help='minimum number of elements for lbfgs')
+parser.add_argument('--mode', type=str, default='angles', help='u turn condition')
 parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
+parser.add_argument('--debug', type=int, default=0, help='constant trajectory for delayed')
+#parser.add_argument('--symmetric', type=int, default=1, help='u turn condition on both sides')
 
 
 args = parser.parse_args()
@@ -76,7 +74,7 @@ nleap = args.nleap
 step_size = args.stepsize
 nsamples = args.nsamples
 burnin = args.burnin
-n_stepsize_adapt = args.stepadapt
+n_stepsize_adapt = int(args.stepadapt)
 nchains = wsize
 target_accept = args.targetaccept
 print(f"Saving runs in parent folder : {savepath}")
@@ -97,7 +95,9 @@ if wrank == 0:
         try:
             samples_nuts = np.load(f"{savefolder}/samples.npy")
             step_size = np.load(f"{savefolder}/stepsize.npy")
-            assert samples_nuts.shape[0] == wsize
+            assert samples_nuts.shape[0] >= wsize
+            samples_nuts = samples_nuts[:wsize]
+            step_size = step_size[:wsize]
             print(f"Loaded nuts samples and stepsize from {savefolder}")
         except Exception as e:
             print("Exception in loading NUTS results : ", e)
@@ -108,11 +108,11 @@ if wrank == 0:
         stanfile, datafile = files
         cmd_model = csp.CmdStanModel(stan_file = stanfile)
         sample = cmd_model.sample(data=datafile, chains=wsize, iter_sampling=nsamples-1, 
-                              metric="unit_e",
-                              adapt_delta=target_accept,
-                              adapt_metric_window=0,
-                              adapt_init_phase=n_stepsize_adapt//2,
-                              adapt_step_size=n_stepsize_adapt//2,
+                                  metric="unit_e",
+                                  adapt_delta=target_accept,
+                                  adapt_metric_window=0,
+                                  adapt_init_phase=1000,
+                                  adapt_step_size=1000,
                               show_console=False, show_progress=True, save_warmup=False)
         draws_pd = sample.draws_pd()
         if not debug:
@@ -143,27 +143,16 @@ comm.Barrier()
 #####################
 # Adaptive
 print("Run Adaptive sampler")
-if args.adaptl:
-    if args.dist=='uniform':
-        savefolder = f"{savepath}/adaptive/offset{args.offset:0.2f}/"
-    elif args.dist=='binomial':
-        savefolder = f"{savepath}/adaptive/pbinom{args.pbinom:0.2f}/"
-else:
-    savefolder = f"{savepath}/adaptive/nleap{args.nleap}/"
-if not bool(args.symmetric):
-    savefolder = f"{savefolder}"[:-1] + "-asymm/"
+algfolder = 'adaptive'
+if args.dist=='uniform':
+    savefolder = f"{savepath}/{algfolder}/offset{args.offset:0.2f}/"
+elif args.dist=='binomial':
+    savefolder = f"{savepath}/{algfolder}/pbinom{args.pbinom:0.2f}/"
 
-if args.check_delayed & args.check_uturn:
-    print("both checks are on, not possible")
-    sys.exit()
-if args.check_delayed:
-    savefolder = f"{savefolder}"[:-1] + "-delayedonly/"
-if args.check_uturn:
-    savefolder = f"{savefolder}"[:-1] + "-uturnonly/"
-if args.pfactor != 1.:
-    savefolder = f"{savefolder}"[:-1] + f"-pfactor{args.pfactor:d}/"
-if args.pthresh != 0.:
-    savefolder = f"{savefolder}"[:-1] + f"-pthresh{args.pthresh:0.2f}/"
+if args.mode == "distance":
+    savefolder = f"{savefolder}"[:-1] + f"-dist/"
+if args.constant_traj:
+    savefolder = f"{savefolder}"[:-1] + f"-ctraj/"
 if args.suffix != "":
     savefolder = f"{savefolder}"[:-1] + f"-{args.suffix}/"
     
@@ -173,13 +162,14 @@ print(f"Saving runs in folder : {savefolder}")
 # start running
 np.random.seed(0)
 #q0 = np.random.normal(np.zeros(D*nchains).reshape(nchains, D))[wrank]
-kernel = DRHMC_Adaptive(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=None,
-                   distribution=args.dist, offset=args.offset, p_binom=args.pbinom, symmetric=bool(args.symmetric))
+kernel = DRHMC_Adaptive(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=args.min_nleap, max_nleap=1024,
+                         distribution=args.dist, offset=args.offset, p_binom=args.pbinom, mode=args.mode,
+                        n_lbfgs=args.n_lbfgs)
 sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
-                        epsadapt=0., constant_trajectory=bool(args.constant_traj), #n_stepsize_adapt,
-                        adapt_delayed_trajectory = bool(args.adaptl),
-                        target_accept=target_accept, pfactor=args.pfactor, pthresh=args.pthresh,
-                        check_delayed=args.check_delayed, check_uturn=args.check_uturn,
+                        epsadapt=n_stepsize_adapt,
+                        nleap_adapt=args.nleapadapt,
+                        constant_trajectory=bool(args.constant_traj), 
+                        target_accept=target_accept, 
                         verbose=False)
 
 print(f"Acceptance for adaptive HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
@@ -214,6 +204,7 @@ if wrank == 0:
     
     print("\nPlotting")
     plt.legend()
+    plt.title(savefolder.split(f'{algfolder}/')[1][:-1])
     plt.savefig('tmp.png')
     plt.savefig(f"{savefolder}/hist")
     plt.close()
