@@ -153,8 +153,8 @@ def nuts_adapt(program_path, data_path, seed):
         show_console=False,
         # adapt_delta=0.95,
         chains=1,
-        iter_warmup=2_000,
-        iter_sampling=10_000,
+        iter_warmup=50_000,
+        iter_sampling=200_000,
         show_progress=False,
     )
     thetas_dict = fit.stan_variables()
@@ -292,6 +292,7 @@ def gist_experiment(
 
 
 def model_steps():
+    rosenbrock = ("rosenbrock", [0.05, 0.025])
     normal = ("normal", [0.5, 0.25])  # for 500: [0.36, 0.18])
     ill_normal = ("ill-normal", [0.1, 0.05])
     corr_normal = ("corr-normal", [0.12, 0.06])
@@ -308,6 +309,7 @@ def model_steps():
     prophet = ("prophet", [0.0006, 0.0003])
     covid = ("covid19-imperial-v2", [0.01])
     return [
+        rosenbrock,
         normal,
         ill_normal,
         corr_normal,
@@ -646,8 +648,8 @@ def learning_curve_plot():
 
 
 ### MAIN ###
-# all_vs_nuts(num_seeds = 2, num_draws = 100, meta_seed = 57484894)
+all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
-uniform_interval_plot()
+# uniform_interval_plot()
 # learning_curve_plot()
