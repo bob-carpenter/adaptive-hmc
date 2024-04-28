@@ -36,10 +36,10 @@ class HMC_Uturn(HMC):
             print("Not implemented")
             raise
                     
-    # def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=True):
+    # def nuts_criterion(self, theta, rho, step_size, theta_next=None, rho_next=None, check_goodness=True):
     #     if theta_next is None: theta_next = theta
     #     if rho_next is None: rho_next = rho
-    #     N = Noffset
+    #     N = 0.
     #     qs, ps, gs = [], [], []
     #     H0 = self.H(theta, rho)
     #     g_next =  self.V_g(theta)
@@ -104,7 +104,7 @@ class HMC_Uturn(HMC):
                 
     #     return int(nleap), lp
 
-    def nuts_criterion(self, theta, rho, step_size, Noffset=0, theta_next=None, rho_next=None, check_goodness=True):
+    def nuts_criterion(self, theta, rho, step_size, theta_next=None, rho_next=None, check_goodness=True, ncheck=None):
         qs, ps, gs = [], [], []
         log_joint_theta_rho = self.H(theta, rho)
         theta_next = theta
@@ -125,7 +125,9 @@ class HMC_Uturn(HMC):
             if distance <= old_distance:
                 return n + 1, qs, ps, gs, True
             old_distance = distance
-
+            if ncheck is not None:
+                if n >= ncheck: return -1, qs, ps, gs, False
+            
         return self.max_nleap, qs, ps, gs, True
 
                 
@@ -1158,9 +1160,9 @@ class DRHMC_Adaptive(DRHMC_AdaptiveStepsize):
 ##############################################
 ###################################################
 class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
-    """adaptive algorithm which runs a u-turn, and upon rejection, makes delayed proposal with same number of steps,
-    and estimates rejection probability for the same number of steps.
-    If number of steps is unreliable, it samples a from u-turn trajectories stored during warmup
+    """adaptive algorithm which runs a u-turn, and 
+    -- if Nuturn < 3, it assumes a failure and calls delayed proposal which expects ghost to fail as well. Number of steps is sampled a from u-turn trajectories.
+    -- otherwise makes a proposal. If reject, makes a new proposal with same number of steps (or adjusted for constant trajectory).
     """
 
     def __init__(self, D, log_prob, grad_log_prob, mass_matrix=None,  min_nleap=2, max_nleap=1024,
@@ -1170,17 +1172,20 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
                                               distribution=distribution, offset=offset, p_binom=p_binom,symmetric=symmetric, **kwargs)
             
         
-    def first_step(self, q, p, step_size, nleap=None, verbose=False):
+    def first_step(self, q, p, step_size, nleap=None, ncheck=None, verbose=False):
         # Go forward
         try:
-            Nuturn, qvec, pvec, gvec, success = self.nuts_criterion(q, p, step_size)
+            Nuturn, qvec, pvec, gvec, success = self.nuts_criterion(q, p, step_size, ncheck=ncheck)
+            if Nuturn == -1:
+                log_prob_accept = -np.inf
+                return [q, p], [qvec, pvec, gvec], log_prob_accept, [0, 0., 0.], [step_size]*3, [0, 0], -1
+            
             if Nuturn < self.min_nleap :
                 if verbose: print("zero nuturn: ", Nuturn, nleap)
                 log_prob_accept = -np.inf
                 return [q, p], [qvec, pvec, gvec], log_prob_accept, [0, 0., 0.], [step_size]*3, [0, 0], 0.
 
             else:
-                
                 if (nleap is not None):
                     if (Nuturn <= nleap): #if ghost trajectory can never reach nleap proposals, it can never give correct DR proposal
                         log_prob_accept = 0.
@@ -1200,6 +1205,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
                 
                 # Hastings
                 log_prob_accept, H0, H1 = self.accept_log_prob([q, p], [q1, p1], return_H=True)
+                log_prob_N = lp_N_rev - lp_N 
                 log_prob_accept_total = log_prob_accept + lp_N_rev - lp_N 
                 log_prob_accept_total = min(0, log_prob_accept_total)
                 
@@ -1220,11 +1226,10 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
             step_size_new = epsf1.rvs(size=1)[0]
             
             # Make the second proposal
-            # if self.constant_trajectory:
-            #     nleap_new = int(min(self.max_nleap, nleap*step_size / step_size_new))
-            # else:
-            #     nleap_new = nleap
-            nleap_new = nleap
+            if self.constant_trajectory == 2:
+                nleap_new = int(min(self.max_nleap, nleap*step_size / step_size_new))
+            else:
+                nleap_new = nleap
                 
             q1, p1, _, _ = self.leapfrog(q0, p0, nleap_new, step_size_new)
             log_prob_accept, H0, H1 = self.accept_log_prob([q0, p0], [q1, p1], return_H=True)
@@ -1276,7 +1281,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
             
             # Make the second proposal
             nleap_prime =  self.nleap_jitter_dist(step_size)
-            if self.constant_trajectory:
+            if self.constant_trajectory > 0:
                 nleap_new = int(min(self.max_nleap, max(self.min_nleap, nleap_prime*step_size / step_size_new)))
             else:
                 nleap_new = int(min(self.max_nleap, max(self.min_nleap, nleap_prime)))
@@ -1285,12 +1290,16 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
             log_prob_accept, H0, H1 = self.accept_log_prob([q0, p0], [q1, p1], return_H=True)
             
             # Ghost trajectory for the second proposal
-            qp_ghost, vecs_ghost, log_prob_accept_ghost, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap)
+            if self.early_stopping : 
+                qp_ghost, vecs_ghost, log_prob_accept_ghost, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap, ncheck=self.min_nleap)
+            else:
+                qp_ghost, vecs_ghost, log_prob_accept_ghost, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap)
             qvec_ghost, pvec_ghost, gvec_ghost = vecs_ghost
             if nleap_ghost != 0:
                 qf, pf, acc = q0, p0, -24
                 steplist = [eps1, 0, step_size_new]
                 stepcount = stepcount_ghost
+                return qf, pf, acc, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, stepcount
                 
             else :
                 eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
@@ -1315,8 +1324,8 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
                     else: qf, pf, acc = q0, p0, -21
                 else: 
                     qf, pf, acc = q1, p1, 3
-                
-            return qf, pf, acc, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, stepcount
+                    
+                return qf, pf, acc, [H0, H1], [self.Hcount, self.Vgcount, self.leapcount], steplist, stepcount
             
         except Exception as e:
             PrintException()
@@ -1353,10 +1362,11 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
     
     def sample(self, q, p=None,
                nsamples=100, burnin=0, step_size=0.1, nleap=10,
-               constant_trajectory=False, 
+               constant_trajectory=0, 
                epsadapt=0, nleap_adapt=0,
-               target_accept=0.65, 
-               check_delayed=False, check_uturn=False,
+               target_accept=0.65,
+               lowp=10, highp=75,
+               early_stopping=False,
                callback=None, verbose=False, seed=99):
 
         np.random.seed(seed)
@@ -1366,6 +1376,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
         self.step_size = step_size
         self.nleap = nleap
         self.constant_trajectory = constant_trajectory
+        self.early_stopping = early_stopping
         self.verbose = verbose
         niterations = self.nsamples + self.burnin
         
@@ -1391,8 +1402,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
             self.traj_array = self.traj_array[ self.traj_array!=0]
             comm.Barrier()
             print(f"Shape of trajectories after bcast  in rank {wrank} : ", self.traj_array.shape)
-            self.nleap_jitter(lowp=10, highp=90, adjustment_factor=1.)
-            #self.nleap_jitter_dist = lambda x: np.random.uniform(5, 15)
+            self.nleap_jitter(lowp=lowp, highp=highp, adjustment_factor=1.)
             if wrank == 0 : state.trajectories = self.trajectories
                 
             

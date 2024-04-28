@@ -32,15 +32,18 @@ parser.add_argument('--stepadapt', type=int, default=0, help='step size adaptati
 parser.add_argument('--nleapadapt', type=int, default=100, help='step size adaptation')
 parser.add_argument('--targetaccept', type=float, default=0.80, help='target acceptance')
 parser.add_argument('--stepsize', type=float, default=0.1, help='initial step size')
-parser.add_argument('--dist', type=str, default='binomial', help='distribution for u-turn sampler')
+parser.add_argument('--dist', type=str, default='uniform', help='distribution for u-turn sampler')
 parser.add_argument('--offset', type=float, default=0.5, help='offset for uturn sampler')
 parser.add_argument('--pbinom', type=float, default=0.6, help='binomial log-prob')
 parser.add_argument('--hmc', type=int, default=0, help='run hmc')
 parser.add_argument('--nuts', type=int, default=0, help='run nuts')
 parser.add_argument('--constant_traj', type=int, default=0, help='constant trajectory for delayed')
-parser.add_argument('--min_nleap', type=int, default=5, help='minimum leapfrog steps')
+parser.add_argument('--early_stopping', type=int, default=0, help='constant trajectory for delayed')
+parser.add_argument('--min_nleap', type=int, default=3, help='minimum leapfrog steps')
 parser.add_argument('--n_lbfgs', type=int, default=10, help='minimum number of elements for lbfgs')
-parser.add_argument('--mode', type=str, default='angles', help='u turn condition')
+parser.add_argument('--mode', type=str, default='distance', help='u turn condition')
+parser.add_argument('--lowp', type=int, default=10, help='low percentile of trajectories')
+parser.add_argument('--highp', type=int, default=75, help='high percentile of trajectories')
 parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
 parser.add_argument('--debug', type=int, default=0, help='constant trajectory for delayed')
 #parser.add_argument('--symmetric', type=int, default=1, help='u turn condition on both sides')
@@ -149,10 +152,12 @@ if args.dist=='uniform':
 elif args.dist=='binomial':
     savefolder = f"{savepath}/{algfolder}/pbinom{args.pbinom:0.2f}/"
 
-if args.mode == "distance":
-    savefolder = f"{savefolder}"[:-1] + f"-dist/"
+if args.mode == "angles":
+    savefolder = f"{savefolder}"[:-1] + f"-angles/"
 if args.constant_traj:
-    savefolder = f"{savefolder}"[:-1] + f"-ctraj/"
+    savefolder = f"{savefolder}"[:-1] + f"-ctraj{args.constant_traj}/"
+if args.early_stopping:
+    savefolder = f"{savefolder}"[:-1] + f"-estop/"
 if args.suffix != "":
     savefolder = f"{savefolder}"[:-1] + f"-{args.suffix}/"
     
@@ -168,8 +173,10 @@ kernel = DRHMC_Adaptive2(D, lp, lp_g, mass_matrix=np.eye(D), min_nleap=args.min_
 sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsamples, burnin=burnin,
                         epsadapt=n_stepsize_adapt,
                         nleap_adapt=args.nleapadapt,
-                        constant_trajectory=bool(args.constant_traj), 
-                        target_accept=target_accept, 
+                        constant_trajectory=args.constant_traj, 
+                        target_accept=target_accept,
+                        early_stopping=args.early_stopping,
+                        lowp=args.lowp, highp=args.highp,
                         verbose=False)
 
 print(f"Acceptance for adaptive HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
