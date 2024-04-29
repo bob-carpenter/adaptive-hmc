@@ -1177,18 +1177,18 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
         try:
             Nuturn, qvec, pvec, gvec, success = self.nuts_criterion(q, p, step_size, ncheck=ncheck)
             if Nuturn == -1:
-                log_prob_accept = -np.inf
+                log_prob_accept = [-np.inf]*3
                 return [q, p], [qvec, pvec, gvec], log_prob_accept, [0, 0., 0.], [step_size]*3, [0, 0], -1
             
             if Nuturn < self.min_nleap :
                 if verbose: print("zero nuturn: ", Nuturn, nleap)
-                log_prob_accept = -np.inf
+                log_prob_accept = [-np.inf]*3
                 return [q, p], [qvec, pvec, gvec], log_prob_accept, [0, 0., 0.], [step_size]*3, [0, 0], 0.
 
             else:
                 if (nleap is not None):
                     if (Nuturn <= nleap): #if ghost trajectory can never reach nleap proposals, it can never give correct DR proposal
-                        log_prob_accept = 0.
+                        log_prob_accept = [0.]*3
                         return [q, p], [qvec, pvec, gvec], log_prob_accept, [Nuturn, Nuturn, nleap], [step_size]*3, [0, 0], nleap
 
                 nleap, lp_N = self.nleap_dist(Nuturn, nleap=nleap)
@@ -1209,13 +1209,13 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
                 log_prob_accept_total = log_prob_accept + lp_N_rev - lp_N 
                 log_prob_accept_total = min(0, log_prob_accept_total)
                 
-                return [q1, p1], [qvec, pvec, gvec], log_prob_accept_total, stepcount, steplist, [H0, H1], nleap
+                return [q1, p1], [qvec, pvec, gvec], [log_prob_accept_total, log_prob_accept, log_prob_N], stepcount, steplist, [H0, H1], nleap
 
         except Exception as e:
             PrintException()
             print(e)
             print(Nuturn, nleap, len(qvec))
-            return [q, p], [[], [], []], -np.inf, [0, 0., 0.], [step_size]*3, [0, 0], 0.
+            return [q, p], [[], [], []], [-np.inf, 0., 0.], [0, 0., 0.], [step_size]*3, [0, 0], 0.
 
         
     def delayed_step(self, q0, p0, qvec, gvec, step_size, nleap, log_prob_accept_first):
@@ -1235,17 +1235,25 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
             log_prob_accept, H0, H1 = self.accept_log_prob([q0, p0], [q1, p1], return_H=True)
             
             # Ghost trajectory for the second proposal
-            qp_ghost, vecs_ghost, log_prob_accept_ghost, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap)
+            qp_ghost, vecs_ghost, log_prob_accept_ghost_total, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap)
+            log_prob_accept_ghost_total, log_prob_accept_ghost_energy, log_prob_accept_ghost_N = log_prob_accept_ghost_total
             qvec_ghost, pvec_ghost, gvec_ghost = vecs_ghost
             if nleap_ghost == 0:
                 qf, pf, acc = q0, p0, -14
                 steplist = [eps1, 0, step_size_new]
                 stepcount = stepcount_ghost
             else:
-                eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
-
+                if self.probabilistic == 1:
+                    if log_prob_accept_ghost_N == -np.inf: log_prob_delayed = -np.inf
+                    else: log_prob_delayed = np.log((1-np.exp(log_prob_accept_ghost_total))) - np.log((1- np.exp(log_prob_accept_first)))
+                elif self.probabilistic == 2:
+                    prob_make_proposal = (1-np.exp(log_prob_accept_ghost_total)) * np.exp(log_prob_accept_ghost_energy)
+                    log_prob_accept_ghost = np.log(1 - prob_make_proposal)
+                    log_prob_delayed = np.log((1-np.exp(log_prob_accept_ghost))) - np.log((1- np.exp(log_prob_accept_first)))
+                else:
+                    log_prob_delayed = np.log((1-np.exp(log_prob_accept_ghost_total))) - np.log((1- np.exp(log_prob_accept_first)))
                 # Hastings
-                log_prob_delayed = np.log((1-np.exp(log_prob_accept_ghost))) - np.log((1- np.exp(log_prob_accept_first)))
+                eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
                 log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
                 log_prob_accept_total = log_prob_accept + log_prob_delayed + log_prob_eps
                 log_prob_accept_total = min(0, log_prob_accept_total)
@@ -1291,9 +1299,10 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
             
             # Ghost trajectory for the second proposal
             if self.early_stopping : 
-                qp_ghost, vecs_ghost, log_prob_accept_ghost, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap, ncheck=self.min_nleap)
+                qp_ghost, vecs_ghost, log_prob_accept_ghost_total, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap, ncheck=self.min_nleap)
             else:
-                qp_ghost, vecs_ghost, log_prob_accept_ghost, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap)
+                qp_ghost, vecs_ghost, log_prob_accept_ghost_total, stepcount_ghost, steplist_ghost, Hs_ghost, nleap_ghost = self.first_step(q1, -p1, step_size, nleap=nleap)
+            log_prob_accept_ghost_total, _, log_prob_accept_ghost_N = log_prob_accept_ghost_total
             qvec_ghost, pvec_ghost, gvec_ghost = vecs_ghost
             if nleap_ghost != 0:
                 qf, pf, acc = q0, p0, -24
@@ -1305,7 +1314,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
                 eps2, epsf2 = self.get_stepsize_dist(q1, -p1, qvec_ghost, gvec_ghost, step_size)
 
                 # Hastings
-                log_prob_delayed = np.log((1-np.exp(log_prob_accept_ghost))) - np.log((1- np.exp(log_prob_accept_first)))
+                log_prob_delayed = np.log((1-np.exp(log_prob_accept_ghost_total))) - np.log((1- np.exp(log_prob_accept_first)))
                 log_prob_eps = epsf2.logpdf(step_size_new) - epsf1.logpdf(step_size_new)
                 log_prob_accept_total = log_prob_accept + log_prob_delayed + log_prob_eps
                 log_prob_accept_total = min(0, log_prob_accept_total)
@@ -1343,6 +1352,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
         p =  multivariate_normal.rvs(mean=np.zeros(self.D), cov=self.inv_mass_matrix, size=1)
         
         qp, vecs, log_prob_accept_total, stepcount, steplist, Hs, nleap = self.first_step(q, p, step_size)
+        log_prob_accept_total, log_prob_accept_energy, log_prob_accept_N = log_prob_accept_total
         q1, p1 = qp
         qvec, pvec, gvec = vecs
         
@@ -1352,7 +1362,21 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
         else:
             u =  np.random.uniform(0., 1., size=1)
             if  np.log(u) > min(0., log_prob_accept_total):
-                return self.delayed_step(q, p, qvec, gvec, step_size = step_size, nleap = nleap, log_prob_accept_first = log_prob_accept_total)
+                if self.probabilistic == 1:
+                    if log_prob_accept_N == -np.inf:
+                        return q, p, -1, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, stepcount
+                    else:
+                        return self.delayed_step(q, p, qvec, gvec, step_size = step_size, nleap = nleap, log_prob_accept_first = log_prob_accept_total)
+                if self.probabilistic == 2:
+                    v =  np.random.uniform(0., 1., size=1)
+                    if  np.log(v) > min(0., log_prob_accept_energy):
+                        return q, p, -1, Hs, [self.Hcount, self.Vgcount, self.leapcount], steplist, stepcount
+                    else:
+                        prob_make_proposal = (1-np.exp(log_prob_accept_total)) * np.exp(log_prob_accept_energy)
+                        log_prob_accept_first = np.log(1 - prob_make_proposal)
+                        return self.delayed_step(q, p, qvec, gvec, step_size = step_size, nleap = nleap, log_prob_accept_first = log_prob_accept_first)
+                else:
+                    return self.delayed_step(q, p, qvec, gvec, step_size = step_size, nleap = nleap, log_prob_accept_first = log_prob_accept_total)
             else:
                 qf, pf = q1, p1
                 accepted = 1
@@ -1367,6 +1391,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
                target_accept=0.65,
                lowp=10, highp=75,
                early_stopping=False,
+               probabilistic=0,
                callback=None, verbose=False, seed=99):
 
         np.random.seed(seed)
@@ -1377,6 +1402,7 @@ class DRHMC_Adaptive2(DRHMC_AdaptiveStepsize):
         self.nleap = nleap
         self.constant_trajectory = constant_trajectory
         self.early_stopping = early_stopping
+        self.probabilistic = probabilistic
         self.verbose = verbose
         niterations = self.nsamples + self.burnin
         

@@ -44,6 +44,7 @@ parser.add_argument('--n_lbfgs', type=int, default=10, help='minimum number of e
 parser.add_argument('--mode', type=str, default='distance', help='u turn condition')
 parser.add_argument('--lowp', type=int, default=10, help='low percentile of trajectories')
 parser.add_argument('--highp', type=int, default=75, help='high percentile of trajectories')
+parser.add_argument('--probabilistic', type=int, default=0, help='probabilistic')
 parser.add_argument('--suffix', type=str, default="", help='suffix, default=""')
 parser.add_argument('--debug', type=int, default=0, help='constant trajectory for delayed')
 #parser.add_argument('--symmetric', type=int, default=1, help='u turn condition on both sides')
@@ -112,6 +113,7 @@ if wrank == 0:
         cmd_model = csp.CmdStanModel(stan_file = stanfile)
         sample = cmd_model.sample(data=datafile, chains=wsize, iter_sampling=nsamples-1, 
                                   metric="unit_e",
+                                  iter_warmup=1000,
                                   adapt_delta=target_accept,
                                   adapt_metric_window=0,
                                   adapt_init_phase=1000,
@@ -158,6 +160,8 @@ if args.constant_traj:
     savefolder = f"{savefolder}"[:-1] + f"-ctraj{args.constant_traj}/"
 if args.early_stopping:
     savefolder = f"{savefolder}"[:-1] + f"-estop/"
+if args.probabilistic !=0:
+    savefolder = f"{savefolder}"[:-1] + f"-prob{args.probabilistic}/"
 if args.suffix != "":
     savefolder = f"{savefolder}"[:-1] + f"-{args.suffix}/"
     
@@ -177,6 +181,7 @@ sampler = kernel.sample(q0, nleap=args.nleap, step_size=step_size, nsamples=nsam
                         target_accept=target_accept,
                         early_stopping=args.early_stopping,
                         lowp=args.lowp, highp=args.highp,
+                        probabilistic=args.probabilistic,
                         verbose=False)
 
 print(f"Acceptance for adaptive HMC in chain {wrank} : ", np.unique(sampler.accepts, return_counts=True))
