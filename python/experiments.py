@@ -1,4 +1,5 @@
 import gist_sampler as gs
+import gist_wishart_sampler as gws
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
@@ -360,6 +361,17 @@ def progressive_experiment(
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 
+def gist_wishart_eval(program_name, seed):
+    program_path = "../stan/" + program_name + ".stan"
+    data_path = "../stan/" + program_name + ".json"
+    model = bs.StanModel(model_lib=program_path, data=data_path)
+    rng = np.random.default_rng(seed)
+    D = model.param_unc_num()
+    theta0 = rng.normal(loc=0, scale=1, size=D)  # random init
+    sampler = gws.GistSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
+    num_draws=100
+    sample = sampler.sample_constrained(num_draws)
+    
 def all_vs_nuts(num_seeds, num_draws, meta_seed):
     stop_griping()
     seed_rng = np.random.default_rng(meta_seed)
@@ -648,7 +660,8 @@ def learning_curve_plot():
 
 
 ### MAIN ###
-all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
+gist_wishart_eval('normal', 12384736)
+# all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
 # uniform_interval_plot()
