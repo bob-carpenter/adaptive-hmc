@@ -6,6 +6,7 @@ import pandas as pd
 import sys
 import os
 import linecache
+from scipy.stats import beta
 
 def mean_sq_jump_distance(sample):
     sq_jump = []
@@ -232,3 +233,18 @@ def cmdstanpy_wrapper(draws_pd, savepath=None):
         np.save(f'{savepath}/leapfrogs', n_leapfrog)
 
     return samples, n_leapfrog
+
+
+
+def get_beta_dist(eps, epsmax, min_fac=500):
+    """return a beta distribution given the mean step-size, max step-size and min step size(factor).
+    Mean of the distribution=eps. Mode of the distribution=eps/2
+    """
+    epsmin = min(epsmax/min_fac, eps/10)
+    scale = epsmax-epsmin
+    eps_scaled = eps/epsmax
+    b = 2 * (1-eps_scaled)**2/eps_scaled
+    a = 2 * (1-eps_scaled)
+    dist = beta(a=a, b=b, loc=epsmin, scale=scale)
+    return dist
+
