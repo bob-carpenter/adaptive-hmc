@@ -368,9 +368,13 @@ def gist_wishart_eval(program_name, seed):
     rng = np.random.default_rng(seed)
     D = model.param_unc_num()
     theta0 = rng.normal(loc=0, scale=1, size=D)  # random init
-    sampler = gws.GistSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
-    num_draws=100
+    sampler = gws.GistWishartSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
+    num_draws=10_000
     sample = sampler.sample_constrained(num_draws)
+    theta_hat = sample[range(num_draws // 2, num_draws), :].mean(axis=0)
+    print(f"{theta_hat=}")
+    rejects, prop_rejects = num_rejects(sample)
+    print(f"{prop_rejects=}")
     
 def all_vs_nuts(num_seeds, num_draws, meta_seed):
     stop_griping()
@@ -660,7 +664,7 @@ def learning_curve_plot():
 
 
 ### MAIN ###
-gist_wishart_eval('normal', 12384736)
+gist_wishart_eval('corr-normal', 25384736)
 # all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
