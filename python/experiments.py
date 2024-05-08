@@ -1,5 +1,5 @@
 import gist_sampler as gs
-import gist_wishart_sampler as gws
+import gist_spectral_step_sampler as gws
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
@@ -207,8 +207,8 @@ def nuts(program_path, data_path, inits, stepsize, draws, seed):
     return parameter_draws, leapfrog_steps
 
 
-def root_mean_square_error(theta1, theta2):
-    return np.sqrt(np.sum((theta1 - theta2) ** 2) / len(theta1))
+def root_mean_square_error(theta, theta_sd, theta_hat):
+    return np.sqrt(np.sum(((theta_hat - theta) / theta_sd)** 2) / len(theta))
 
 
 def nuts_experiment(
@@ -245,7 +245,9 @@ def gist_experiment(
     num_draws,
     frac,
     theta_hat,
+    sd_theta_hat,
     theta_sq_hat,
+    sd_theta_sq_hat,
     seed,
 ):
     model_bs = bs.StanModel(
@@ -263,8 +265,8 @@ def gist_experiment(
     msjd = np.mean(sq_jumps(constrained_draws))
     theta_hat_gist = constrained_draws.mean(axis=0)
     theta_sq_hat_gist = (constrained_draws ** 2).mean(axis=0)
-    rmse = root_mean_square_error(theta_hat, theta_hat_gist)
-    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_gist)
+    rmse = root_mean_square_error(theta_hat, sd_theta_hat, theta_hat_gist)
+    rmse_sq = root_mean_square_error(theta_sq_hat, sd_theta_sq_hat, theta_sq_hat_gist)
     steps = sampler._gradient_evals
     print(
         f"Gist({frac}): MSJD={msjd:8.3f};  leapfrog_steps={steps}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}"
@@ -361,20 +363,27 @@ def progressive_experiment(
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 
-def gist_wishart_eval(program_name, seed):
+def gist_spectral_step_eval(program_name, seed):
     program_path = "../stan/" + program_name + ".stan"
     data_path = "../stan/" + program_name + ".json"
     model = bs.StanModel(model_lib=program_path, data=data_path)
     rng = np.random.default_rng(seed)
     D = model.param_unc_num()
     theta0 = rng.normal(loc=0, scale=1, size=D)  # random init
-    sampler = gws.GistWishartSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
+    sampler = gws.GistSpectralStepSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
     num_draws=10_000
     sample = sampler.sample_constrained(num_draws)
-    theta_hat = sample[range(num_draws // 2, num_draws), :].mean(axis=0)
-    print(f"{theta_hat=}")
+    burned_in_sample = sample[range(num_draws // 2, num_draws), :]
+    theta_hat = burned_in_sample.mean(axis=0)
+    sd_theta_hat = burned_in_sample.std(axis=0)
+    quant05_theta_hat = np.percentile(burned_in_sample, 5, axis=0)
+    quant95_theta_hat = np.percentile(burned_in_sample, 95, axis=0)
     rejects, prop_rejects = num_rejects(sample)
-    print(f"{prop_rejects=}")
+    print(f"mean = {theta_hat}")
+    print(f"sd = {sd_theta_hat}")
+    print(f"05% quantile: {quant05_theta_hat}")
+    print(f"95% quantile: {quant95_theta_hat}")
+    print(f"% rejection: {prop_rejects}")
     
 def all_vs_nuts(num_seeds, num_draws, meta_seed):
     stop_griping()
@@ -450,7 +459,9 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
                         num_draws=num_draws,
                         frac=path_frac,
                         theta_hat=nuts_fit.theta_,
+                        sd_theta_hat=nuts_fit.theta_sd_,
                         theta_sq_hat=nuts_fit.theta_sq_,
+                        sd_theta_sq_hat=nuts_fit.theta_sq_sd_,
                         seed=seed,
                     )
                     df.loc[len(df)] = (
@@ -551,7 +562,9 @@ def uniform_interval_plot():
                     num_draws=num_draws,
                     frac=path_frac,
                     theta_hat=nuts_fit.theta_,
+                    sd_theta_hat=nuts_fit.theta_sd_,
                     theta_sq_hat=nuts_fit.theta_sq_,
+                    sd_theta_sq_hat=nuts_fit.theta_sq_sd_,
                     seed=seed,
                 )
                 df.loc[len(df)] = stepsize, path_frac, "Leapfrog Steps", gist_fit.steps_
@@ -664,9 +677,14 @@ def learning_curve_plot():
 
 
 ### MAIN ###
-gist_wishart_eval('corr-normal', 25384736)
+
+# gist_spectral_step_eval('funnel', 25384736)
+# gist_spectral_step_eval('corr-normal', 25384736)
+# gist_spectral_step_eval('normal', 25384736)
+
+
+uniform_interval_plot()
+# learning_curve_plot()
 # all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
-# uniform_interval_plot()
-# learning_curve_plot()
