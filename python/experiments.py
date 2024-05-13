@@ -17,7 +17,7 @@ class NutsFit:
         self,
         draws_dict,
         draws_array,
-        theta,
+        theta,  # constrained
         theta_sd,
         theta_sq,
         theta_sq_sd,
@@ -257,7 +257,7 @@ def nuts_experiment(
 def gist_experiment(
     program_path,
     data,
-    theta_unc,
+    theta_cons,
     stepsize,
     num_draws,
     frac,
@@ -272,9 +272,9 @@ def gist_experiment(
         model_lib=program_path, data=data, capture_stan_prints=False
     )
     rng = np.random.default_rng(seed)
-    theta = model_bs.param_unconstrain(theta_unc)
+    theta_unc = model_bs.param_unconstrain(theta_cons)
     sampler = gs.GistSampler(
-        model=model_bs, stepsize=stepsize, theta=theta, rng=rng, frac=frac
+        model=model_bs, stepsize=stepsize, theta=theta_unc, rng=rng, frac=frac
     )
     constrained_draws = sampler.sample_constrained(num_draws)
     rejects, prop_rejects = num_rejects(constrained_draws)
@@ -459,7 +459,7 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
                     gist_fit = gist_experiment(
                         program_path=program_path,
                         data=data_path,
-                        theta_unc=np.array(nuts_draw_array),
+                        theta_cons=np.array(nuts_draw_array),
                         stepsize=stepsize,
                         num_draws=num_draws,
                         frac=path_frac,
