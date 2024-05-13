@@ -168,8 +168,8 @@ def nuts_adapt(program_path, data_path, seed):
         show_console=False,
         # adapt_delta=0.95,
         chains=1,
-        iter_warmup=50_000,
-        iter_sampling=200_000,
+        iter_warmup=5_000,
+        iter_sampling=20_000,
         show_progress=False,
     )
     thetas_dict = fit.stan_variables()
@@ -245,8 +245,8 @@ def nuts_experiment(
     )
     theta_nuts = parameter_draws.mean(axis=0)
     theta_sq_nuts = (parameter_draws ** 2).mean(axis=0)
-    rmse = root_mean_square_error(theta, theta_nuts)
-    rmse_sq = root_mean_square_error(theta_sq, theta_sq_nuts)
+    rmse = root_mean_square_error(theta, theta_sd, theta_nuts)
+    rmse_sq = root_mean_square_error(theta_sq, theta_sq_sd, theta_sq_nuts)
     msjd = np.mean(sq_jumps(parameter_draws))
     print(
         f"NUTS: MSJD={msjd:8.3f};  leapfrog_steps={leapfrog_steps};  RMSE(theta)={rmse:7.4f};  RMSE(theta**2)={rmse_sq:8.4f}"
@@ -315,22 +315,22 @@ def gist_experiment(
 def model_names():
     """Return the file names of the models to evaluate."""
     return [
+        # 'normal',
+        # 'ill-normal',
+        # 'corr-normal',
         'rosenbrock',
-        'normal',
-        'ill-normal',
-        'corr-normal',
-        'irt-2pl',
-        'glmm-poisson',
-        'eight-schools',
-        'normal-mixture',
-        'hmm',
-        'arma',
+        # 'glmm-poisson',
+        # 'hmm',
         'garch',
-        'arK',
-        'pkpd',
-        'lotka-volterra'
+        # 'lotka-volterra'
+        # 'irt-2pl',
+        # 'eight-schools',
+        # 'normal-mixture',
+        # 'arma',
+        # 'arK',
         # 'prophet', 
-        # 'covid19-impperial-v2'
+        # 'covid19-impperial-v2',
+        # 'pkpd',
     ]
 
 
@@ -683,9 +683,9 @@ def learning_curve_plot():
 
 # Generate plots for paper
     
-uniform_interval_plot(num_seeds = 200, num_draws=100)
+# uniform_interval_plot(num_seeds = 200, num_draws=100)
 # learning_curve_plot()
-# all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
+all_vs_nuts(num_seeds = 5, num_draws = 100, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
 
