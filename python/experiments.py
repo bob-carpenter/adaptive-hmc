@@ -1,5 +1,5 @@
 import gist_sampler as gs
-import gist_wishart_sampler as gws
+import gist_spectral_step_sampler as gws
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
@@ -12,6 +12,7 @@ import warnings
 
 
 class NutsFit:
+    """Object to store te result of a NUTS run"""
     def __init__(
         self,
         draws_dict,
@@ -35,6 +36,7 @@ class NutsFit:
 
 
 class GistFit:
+    """Object to store te result of a GIST run"""
     def __init__(
         self,
         sampler,
@@ -59,6 +61,7 @@ class GistFit:
 
 
 def stop_griping():
+    """Turn off warnings so that we only see real errors."""
     warnings.filterwarnings(
         "ignore", message="Loading a shared object .* that has already been loaded.*"
     )
@@ -66,6 +69,7 @@ def stop_griping():
 
 
 def flatten_dict_values(data_dict):
+    """Return an aray of entries in the dictionary concatenated together."""
     flattened_list = []
     for value in data_dict.values():
         if isinstance(value, (np.ndarray)):
@@ -79,12 +83,14 @@ def flatten_dict_values(data_dict):
 
 
 def sq_jumps(draws):
+    """Return an array of squared distances between consecutive draws."""
     M = np.shape(draws)[0]
     jumps = draws[range(1, M), :] - draws[range(0, M - 1), :]
     return [np.dot(jump, jump) for jump in jumps]
 
 
 def traceplot(chain):
+    """Return a traceplot for the specified single chain."""
     df = pd.DataFrame({"m": range(len(chain)), "theta": chain})
     plot = (
         pn.ggplot(df, pn.aes(x="m", y="theta"))
@@ -96,6 +102,7 @@ def traceplot(chain):
 
 
 def histogram(xs):
+    """Return a histogram plot of the specified values with a vertical blue line at the mean."""
     df = pd.DataFrame({"x": xs})
     plot = (
         pn.ggplot(df, pn.aes(x="x"))
@@ -106,6 +113,7 @@ def histogram(xs):
 
 
 def histogram_vs_normal_density(xs):
+    """Return a histogram plot of the specified value with a blue overlay of a standard normal density."""
     df = pd.DataFrame({"x": xs})
     plot = (
         pn.ggplot(df, pn.aes(x="x"))
@@ -113,13 +121,14 @@ def histogram_vs_normal_density(xs):
             pn.aes(y="..density.."), bins=50, color="black", fill="white"
         )
         + pn.stat_function(
-            fun=sp.stats.norm.pdf, args={"loc": 0, "scale": 1}, color="red", size=1
+            fun=sp.stats.norm.pdf, args={"loc": 0, "scale": 1}, color="blue", size=1
         )
     )
     return plot
 
 
 def num_rejects(draws):
+    """Return the number of times values are exactly repeated consecutively in the chain of draws."""
     num_draws = np.shape(draws)[0]
     rejects = 0
     for m in range(num_draws - 1):
@@ -129,6 +138,7 @@ def num_rejects(draws):
 
 
 def constrain(model, draws):
+    """Return the constrained draws corresponding the specified draws using the specified model for the transform."""
     num_draws = np.shape(draws)[0]
     D = model.param_unc_num()
     draws_constr = np.empty((num_draws, D))
@@ -138,14 +148,18 @@ def constrain(model, draws):
 
 
 def metadata_columns(fit):
+    """Return the number of metadata columns in CmdStanPy's output."""
     return len(fit.metadata.method_vars.keys())
 
 
+
 def dict_draw(thetas_dict, n):
+    """Extract the n-th draw from the specified dictionary and return as a dictionary to use for initialization."""
     return {name: draws[n] for name, draws in thetas_dict.items()}
 
 
 def nuts_adapt(program_path, data_path, seed):
+    """Return a NUTS fit for the specified program and data with the specified seed, running long enough to get a relatively accurate answer (50K warmup, 200K sampling iterations)."""
     model = csp.CmdStanModel(stan_file=program_path)
     fit = model.sample(
         data=data_path,
@@ -181,6 +195,7 @@ def nuts_adapt(program_path, data_path, seed):
 
 
 def nuts(program_path, data_path, inits, stepsize, draws, seed):
+    """Run NUTS for comparison with the specified program, data, inits, stepsize, number of draws, and seed."""
     model = csp.CmdStanModel(stan_file=program_path)
     fit = model.sample(
         data=data_path,
@@ -207,8 +222,9 @@ def nuts(program_path, data_path, inits, stepsize, draws, seed):
     return parameter_draws, leapfrog_steps
 
 
-def root_mean_square_error(theta1, theta2):
-    return np.sqrt(np.sum((theta1 - theta2) ** 2) / len(theta1))
+def root_mean_square_error(theta, theta_sd, theta_hat):
+    """Compute the standardized (z-score) RMSE for theta_hat given the reference mean and standard deviation."""
+    return np.sqrt(np.sum(((theta_hat - theta) / theta_sd)** 2) / len(theta))
 
 
 def nuts_experiment(
@@ -223,6 +239,7 @@ def nuts_experiment(
     draws,
     stepsize,
 ):
+    """Return specified number of draws for NUTS for the specified program, data, inits, seed, and stepsize, with specified reference values for theta, theta squared and their standard deviation."""
     parameter_draws, leapfrog_steps = nuts(
         program_path, data, inits, stepsize, draws, seed
     )
@@ -245,9 +262,12 @@ def gist_experiment(
     num_draws,
     frac,
     theta_hat,
+    sd_theta_hat,
     theta_sq_hat,
+    sd_theta_sq_hat,
     seed,
 ):
+    """Return specified number of draws for GIST for the specified program, data, inits, seed, and stepsize, with specified reference values for theta, theta squared and their standard deviation."""
     model_bs = bs.StanModel(
         model_lib=program_path, data=data, capture_stan_prints=False
     )
@@ -263,8 +283,8 @@ def gist_experiment(
     msjd = np.mean(sq_jumps(constrained_draws))
     theta_hat_gist = constrained_draws.mean(axis=0)
     theta_sq_hat_gist = (constrained_draws ** 2).mean(axis=0)
-    rmse = root_mean_square_error(theta_hat, theta_hat_gist)
-    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_gist)
+    rmse = root_mean_square_error(theta_hat, sd_theta_hat, theta_hat_gist)
+    rmse_sq = root_mean_square_error(theta_sq_hat, sd_theta_sq_hat, theta_sq_hat_gist)
     steps = sampler._gradient_evals
     print(
         f"Gist({frac}): MSJD={msjd:8.3f};  leapfrog_steps={steps}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}"
@@ -292,39 +312,26 @@ def gist_experiment(
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 
-def model_steps():
-    rosenbrock = ("rosenbrock", [0.05, 0.025])
-    normal = ("normal", [0.5, 0.25])  # for 500: [0.36, 0.18])
-    ill_normal = ("ill-normal", [0.1, 0.05])
-    corr_normal = ("corr-normal", [0.12, 0.06])
-    irt = ("irt-2pl", [0.05, 0.025])
-    poisson_glmm = ("glmm-poisson", [0.008, 0.004])
-    eight_schools = ("eight-schools", [0.5, 0.25])
-    normal_mix = ("normal-mixture", [0.01, 0.005])
-    hmm = ("hmm", [0.025, 0.0125])
-    arma = ("arma", [0.016, 0.008])
-    garch = ("garch", [0.16, 0.08])
-    arK = ("arK", [0.01, 0.005])
-    pkpd = ("pkpd", [0.1, 0.05])
-    lotka_volterra = ("lotka-volterra", [0.018, 0.009])
-    prophet = ("prophet", [0.0006, 0.0003])
-    covid = ("covid19-imperial-v2", [0.01])
+def model_names():
+    """Return the file names of the models to evaluate."""
     return [
-        rosenbrock,
-        normal,
-        ill_normal,
-        corr_normal,
-        irt,
-        poisson_glmm,
-        eight_schools,
-        normal_mix,
-        hmm,
-        arma,
-        garch,
-        arK,
-        pkpd,
-        lotka_volterra,
-    ]  # prophet, covid
+        'rosenbrock',
+        'normal',
+        'ill-normal',
+        'corr-normal',
+        'irt-2pl',
+        'glmm-poisson',
+        'eight-schools',
+        'normal-mixture',
+        'hmm',
+        'arma',
+        'garch',
+        'arK',
+        'pkpd',
+        'lotka-volterra'
+        # 'prophet', 
+        # 'covid19-impperial-v2'
+    ]
 
 
 def progressive_experiment(
@@ -361,20 +368,27 @@ def progressive_experiment(
     #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
 
 
-def gist_wishart_eval(program_name, seed):
+def gist_spectral_step_eval(program_name, seed):
     program_path = "../stan/" + program_name + ".stan"
     data_path = "../stan/" + program_name + ".json"
     model = bs.StanModel(model_lib=program_path, data=data_path)
     rng = np.random.default_rng(seed)
     D = model.param_unc_num()
     theta0 = rng.normal(loc=0, scale=1, size=D)  # random init
-    sampler = gws.GistWishartSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
+    sampler = gws.GistSpectralStepSampler(model=model, theta=theta0, rng=rng, lb_frac=0.5)
     num_draws=10_000
     sample = sampler.sample_constrained(num_draws)
-    theta_hat = sample[range(num_draws // 2, num_draws), :].mean(axis=0)
-    print(f"{theta_hat=}")
+    burned_in_sample = sample[range(num_draws // 2, num_draws), :]
+    theta_hat = burned_in_sample.mean(axis=0)
+    sd_theta_hat = burned_in_sample.std(axis=0)
+    quant05_theta_hat = np.percentile(burned_in_sample, 5, axis=0)
+    quant95_theta_hat = np.percentile(burned_in_sample, 95, axis=0)
     rejects, prop_rejects = num_rejects(sample)
-    print(f"{prop_rejects=}")
+    print(f"mean = {theta_hat}")
+    print(f"sd = {sd_theta_hat}")
+    print(f"05% quantile: {quant05_theta_hat}")
+    print(f"95% quantile: {quant95_theta_hat}")
+    print(f"% rejection: {prop_rejects}")
     
 def all_vs_nuts(num_seeds, num_draws, meta_seed):
     stop_griping()
@@ -383,7 +397,7 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
     print(f"NUM DRAWS: {num_draws}  NUM SEEDS: {num_seeds}")
     columns = ["model", "sampler", "stepsize", "binom_prob", "val_type", "val"]
     df = pd.DataFrame(columns=columns)
-    for program_name, stepsizes in model_steps():
+    for program_name in model_names():
         program_path = "../stan/" + program_name + ".stan"
         data_path = "../stan/" + program_name + ".json"
         print(f"\nMODEL: {program_path}")
@@ -450,7 +464,9 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
                         num_draws=num_draws,
                         frac=path_frac,
                         theta_hat=nuts_fit.theta_,
+                        sd_theta_hat=nuts_fit.theta_sd_,
                         theta_sq_hat=nuts_fit.theta_sq_,
+                        sd_theta_sq_hat=nuts_fit.theta_sq_sd_,
                         seed=seed,
                     )
                     df.loc[len(df)] = (
@@ -511,7 +527,7 @@ def vs_nuts_plot(val_type):
             rmse_df, pn.aes(x="label", y="val", color="sampler")
         )  # fill='stepsize'
         + pn.geom_boxplot()
-        + pn.facet_wrap("~ stepsize + model", scales="free", ncol=len(model_steps()))
+        + pn.facet_wrap("~ stepsize + model", scales="free", ncol=len(model_names()))
         + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
         + pn.expand_limits(y=0)
         + pn.theme(
@@ -521,11 +537,9 @@ def vs_nuts_plot(val_type):
     )
     plot.save(filename="vs_nuts_" + val_type + ".pdf", width=24, height=6)
 
-
-def uniform_interval_plot():
+# [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+def uniform_interval_plot(num_seeds, num_draws):
     stop_griping()
-    num_seeds = 200
-    num_draws = 100
     meta_seed = 57484894
     seed_rng = np.random.default_rng(meta_seed)
     seeds = seed_rng.integers(low=0, high=2 ** 32, size=num_seeds)
@@ -551,7 +565,9 @@ def uniform_interval_plot():
                     num_draws=num_draws,
                     frac=path_frac,
                     theta_hat=nuts_fit.theta_,
+                    sd_theta_hat=nuts_fit.theta_sd_,
                     theta_sq_hat=nuts_fit.theta_sq_,
+                    sd_theta_sq_hat=nuts_fit.theta_sq_sd_,
                     seed=seed,
                 )
                 df.loc[len(df)] = stepsize, path_frac, "Leapfrog Steps", gist_fit.steps_
@@ -664,9 +680,20 @@ def learning_curve_plot():
 
 
 ### MAIN ###
-gist_wishart_eval('corr-normal', 25384736)
+
+# Generate plots for paper
+    
+uniform_interval_plot(num_seeds = 200, num_draws=100)
+# learning_curve_plot()
 # all_vs_nuts(num_seeds = 5, num_draws = 500, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
-# uniform_interval_plot()
-# learning_curve_plot()
+
+
+# Ongoing experimentation
+
+# gist_spectral_step_eval('funnel', 25384736)
+# gist_spectral_step_eval('corr-normal', 25384736)
+# gist_spectral_step_eval('normal', 25384736)
+
+
