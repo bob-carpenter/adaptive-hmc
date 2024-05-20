@@ -159,7 +159,7 @@ def dict_draw(thetas_dict, n):
 
 
 def nuts_adapt(program_path, data_path, seed):
-    """Return a NUTS fit for the specified program and data with the specified seed, running long enough to get a relatively accurate answer (50K warmup, 200K sampling iterations)."""
+    """Return a NUTS fit for the specified program and data with the specified seed, running long enough to get a relatively accurate answer."""
     model = csp.CmdStanModel(stan_file=program_path)
     fit = model.sample(
         data=data_path,
@@ -168,8 +168,8 @@ def nuts_adapt(program_path, data_path, seed):
         show_console=False,
         # adapt_delta=0.95,
         chains=1,
-        iter_warmup=5_000,
-        iter_sampling=20_000,
+        iter_warmup=20_000,
+        iter_sampling=100_000,
         show_progress=False,
     )
     thetas_dict = fit.stan_variables()
@@ -315,14 +315,14 @@ def gist_experiment(
 def model_names():
     """Return the file names of the models to evaluate."""
     return [
-        # 'normal',
-        # 'ill-normal',
-        # 'corr-normal',
+        'normal',
+        'ill-normal',
+        'corr-normal',
         'rosenbrock',
-        # 'glmm-poisson',
-        # 'hmm',
+        'glmm-poisson',
+        'hmm',
         'garch',
-        # 'lotka-volterra'
+        'lotka-volterra'
         # 'irt-2pl',
         # 'eight-schools',
         # 'normal-mixture',
@@ -454,7 +454,7 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
                 )
                 df.loc[len(df)] = program_name, "NUTS", step_scale, "-", "MSJD", msjd
                 for path_frac, binom_prob_rank in zip(
-                    [0.0, 0.3, 0.5, 0.7], ["S", "M", "L", "XL"]
+                    [0.0, 0.3, 0.5, 0.7], [".0", ".3", ".5", ".7"]
                 ):
                     gist_fit = gist_experiment(
                         program_path=program_path,
@@ -685,7 +685,7 @@ def learning_curve_plot():
     
 # uniform_interval_plot(num_seeds = 200, num_draws=100)
 # learning_curve_plot()
-all_vs_nuts(num_seeds = 5, num_draws = 100, meta_seed = 57484894)
+all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
 
