@@ -6,11 +6,10 @@ data {
 parameters {
   real<lower=0> tau;
   real mu;
-  vector[J] theta_std;
+  vector<offset=mu, multiplier=tau>[J] theta;
 }
 model {
-  vector[J] theta = mu + tau * theta_std;
-  theta_std ~ normal(0, 1);
+  theta ~ normal(mu, tau);
   y ~ normal(theta, sigma);
   mu ~ normal(0, 5);
   tau ~ normal(0, 10); // cauchy(0, 5);

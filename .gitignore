@@ -164,3 +164,19 @@ cython_debug/
 
 # Mac
 *.DS_Store
+
+# Stan compilations
+stan/arK
+stan/arma
+stan/corr-normal
+stan/eight-schools
+stan/garch
+stan/glmm-poisson
+stan/hmm
+stan/ill-normal
+stan/irt-2pl
+stan/lotka-volterra
+stan/normal-mixture
+stan/normal
+stan/pkpd
+stan/prophet

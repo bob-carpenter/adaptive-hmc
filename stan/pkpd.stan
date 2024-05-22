@@ -41,9 +41,9 @@ transformed data {
   array[0] int x_i;
 }
 parameters {
-  real<lower=0> k_a; // Dosing rate in 1/day
-  real<lower=0> K_m; // Michaelis-Menten constant in mg/L
-  real<lower=0> V_m; // Maximum elimination rate in 1/day
+  real<lower=0> k_a; // Dosing rate in 1/day (doc: delta)
+  real<lower=0> K_m; // Michaelis-Menten constant in mg/L (doc: mu)
+  real<lower=0> V_m; // Maximum elimination rate in 1/day (doc: nu)
   real<lower=0> sigma;
 }
 model {
