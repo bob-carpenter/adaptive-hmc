@@ -12,7 +12,7 @@ import warnings
 
 
 class NutsFit:
-    """Object to store te result of a NUTS run"""
+    """Object to store the result of a NUTS run"""
     def __init__(
         self,
         draws_dict,
