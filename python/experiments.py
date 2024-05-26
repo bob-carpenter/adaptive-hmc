@@ -1,4 +1,5 @@
 import gist_sampler as gs
+import multinomial_sampler as ms
 import gist_spectral_step_sampler as gws
 import progressive_turnaround as pta
 import cmdstanpy as csp
@@ -623,15 +624,18 @@ def uniform_interval_plot(num_seeds, num_draws):
 
 def learning_curve_plot():
     seed = 189236576
-    stepsize = 0.25
+    stepsize = 0.5
     D = 100
     program_path, data_path = "../stan/normal.stan", "../stan/normal.json"
     model_bs = bs.StanModel(model_lib=program_path, data=data_path)
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(loc=0, scale=1, size=D)  # draw from stationary distribution
-    sampler = ta.GistSampler(
+    sampler = gs.GistSampler(
         model=model_bs, stepsize=stepsize, theta=theta0, frac=0.0, rng=rng
     )
+    sampler = ms.MultinomialSampler(
+        model=model_bs, stepsize=stepsize, theta=theta0, steps=10, rng=rng
+        )
     N = 100_000
 
     # choose one of next two to use sampler or take uniform draws
@@ -653,7 +657,7 @@ def learning_curve_plot():
     iteration = np.arange(1, len(avg_abs_err) + 1)
     iterations = np.concatenate([iteration, iteration])
     df = pd.DataFrame(
-        {"iteration": iterations, "E[|err|]": errs, "estimand": estimands}
+        {"iteration": iterations, "mean abs err": errs, "estimand": estimands}
     )
     lines_df = pd.DataFrame(
         {
@@ -665,7 +669,7 @@ def learning_curve_plot():
         }
     )
     plot = (
-        pn.ggplot(df, pn.aes(x="iteration", y="E[|err|]"))
+        pn.ggplot(df, pn.aes(x="iteration", y="mean abs err"))
         + pn.geom_line()
         + pn.scale_x_log10(limits=(10, N))
         + pn.scale_y_log10()
@@ -683,9 +687,9 @@ def learning_curve_plot():
 
 # Generate plots for paper
     
+learning_curve_plot()
 # uniform_interval_plot(num_seeds = 200, num_draws=100)
-# learning_curve_plot()
-all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
 
