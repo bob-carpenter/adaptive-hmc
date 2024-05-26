@@ -1,5 +1,6 @@
 import gist_sampler as gs
 import multinomial_sampler as ms
+import stepsize_adapt_sampler as sas
 import gist_spectral_step_sampler as gws
 import progressive_turnaround as pta
 import cmdstanpy as csp
@@ -635,7 +636,11 @@ def learning_curve_plot():
     )
     sampler = ms.MultinomialSampler(
         model=model_bs, stepsize=stepsize, theta=theta0, steps=10, rng=rng
-        )
+    )
+    sampler = sas.StepAdaptSampler(
+        model=model_bs, rng=rng, integration_time=2, theta=theta0,
+        min_accept_prob=0.8
+    )
     N = 100_000
 
     # choose one of next two to use sampler or take uniform draws
@@ -644,20 +649,22 @@ def learning_curve_plot():
 
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
-    abs_err = np.abs(cumsum_draws) / divisors
-    avg_abs_err = np.mean(abs_err, axis=1)
-
+    sq_err = (cumsum_draws / divisors)**2
+    mean_sq_err = np.mean(sq_err, axis=1)
+    root_mean_sq_err = np.sqrt(mean_sq_err)
+    
     draws_sq = draws ** 2
     cumsum_draws_sq = np.cumsum(draws_sq, axis=0)
-    abs_err_sq = np.abs(cumsum_draws_sq / divisors - 1)  # E[ChiSquare(1)] = 1
-    avg_abs_err_sq = np.mean(abs_err_sq, axis=1)
+    sq_err_sq = (cumsum_draws_sq / divisors - 1)**2  # E[ChiSquare(1)] = 1
+    mean_sq_err_sq = np.mean(sq_err_sq, axis=1)
+    root_mean_sq_err_sq = np.sqrt(mean_sq_err_sq)
 
-    errs = np.concatenate([avg_abs_err, avg_abs_err_sq])
+    errs = np.concatenate([root_mean_sq_err, root_mean_sq_err_sq])
     estimands = np.concatenate([np.array(["theta"] * N), np.array(["theta**2"] * N)])
-    iteration = np.arange(1, len(avg_abs_err) + 1)
+    iteration = np.arange(1, len(mean_sq_err) + 1)
     iterations = np.concatenate([iteration, iteration])
     df = pd.DataFrame(
-        {"iteration": iterations, "mean abs err": errs, "estimand": estimands}
+        {"iteration": iterations, "RMSE": errs, "estimand": estimands}
     )
     lines_df = pd.DataFrame(
         {
@@ -669,7 +676,7 @@ def learning_curve_plot():
         }
     )
     plot = (
-        pn.ggplot(df, pn.aes(x="iteration", y="mean abs err"))
+        pn.ggplot(df, pn.aes(x="iteration", y="RMSE"))
         + pn.geom_line()
         + pn.scale_x_log10(limits=(10, N))
         + pn.scale_y_log10()
