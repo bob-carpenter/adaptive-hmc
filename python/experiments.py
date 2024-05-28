@@ -166,10 +166,11 @@ def nuts_adapt(program_path, data_path, seed):
         seed=seed,
         metric="unit_e",
         show_console=False,
-        # adapt_delta=0.95,
-        chains=1,
+        adapt_delta=0.95,
+        chains=2,
+        parallel_chains=2,
         iter_warmup=20_000,
-        iter_sampling=100_000,
+        iter_sampling=50_000,
         show_progress=False,
     )
     thetas_dict = fit.stan_variables()
@@ -535,7 +536,7 @@ def vs_nuts_plot(val_type):
         )
         + pn.labs(x="Sampler", y=val_type)
     )
-    plot.save(filename="vs_nuts_" + val_type + ".pdf", width=24, height=6)
+    plot.save(filename="vs_nuts_" + val_type + ".pdf", width=12, height=6)
 
 # [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
 def uniform_interval_plot(num_seeds, num_draws):
@@ -685,9 +686,9 @@ def learning_curve_plot():
     
 # uniform_interval_plot(num_seeds = 200, num_draws=100)
 # learning_curve_plot()
-all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
-# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-#     vs_nuts_plot(val_type)
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+    vs_nuts_plot(val_type)
 
 
 # Ongoing experimentation
