@@ -1,8 +1,11 @@
 import gist_sampler as gs
+import multinomial_sampler as ms
+import stepsize_adapt_sampler as sas
 import gist_spectral_step_sampler as gws
 import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
+import scipy as sp
 import bridgestan as bs
 import plotnine as pn
 import pandas as pd
@@ -518,7 +521,7 @@ def vs_nuts_plot(val_type):
     df = pd.read_csv("all-vs-nuts.csv")
     rmse_df = df[df["val_type"] == val_type]
     rmse_df["label"] = rmse_df.apply(
-        lambda x: "NUTS" if x["sampler"] == "NUTS" else f"STU-{x['binom_prob']}", axis=1
+        lambda x: "NUTS" if x["sampler"] == "NUTS" else f"GIST-{x['binom_prob']}", axis=1
     )
     rmse_df["fill"] = rmse_df["sampler"].apply(
         lambda x: "lightgrey" if x == "NUTS" else "white"
@@ -621,17 +624,53 @@ def uniform_interval_plot(num_seeds, num_draws):
     )
     plot.save(filename="uniform_prob_steps_plot.pdf", width=8.5, height=5)
 
+def create_model(program_name):
+    program_path = "../stan/" + program_name + ".stan"
+    data_path = "../stan/" + program_name + ".json"
+    model_bs = bs.StanModel(model_lib=program_path, data=data_path)
+    return model_bs
 
+def funnel_test():
+    # accept 0.6, N = 10_000, time=10; 0.6, 10_000, 20
+    seed = 3946456389
+    model = create_model('funnel')
+    D = model.param_unc_num()
+    rng = np.random.default_rng(seed)
+    theta0 = np.zeros(D)
+    theta0[0] = rng.normal(scale=3)
+    theta0[1:D] = rng.normal(scale=np.exp(theta0[0] / 2), size=(D - 1))
+    sampler = sas.StepAdaptSampler(
+        model=model, rng=rng, integration_time=25, theta=theta0,
+        min_accept_prob=0.6
+    )
+    N = 100_000
+    draws = sampler.sample_constrained(N)
+    x = draws[:, 0]
+    x_df = pd.DataFrame({'log sigma': x})
+    plot = (
+        pn.ggplot(mapping=pn.aes(x='log sigma'), data=x_df)
+        + pn.geom_histogram(pn.aes(y='..density..', x='log sigma'), bins=31, color='black', fill='white')
+        + pn.stat_function(fun=lambda x: sp.stats.norm.pdf(x, 0, 3), color='red')
+        + pn.scale_x_continuous(limits=(-9, 9), breaks=(-9, -6, -3, 0, 3, 6, 9))
+    )
+    plot.show()
+    
 def learning_curve_plot():
     seed = 189236576
-    stepsize = 0.25
-    D = 100
-    program_path, data_path = "../stan/normal.stan", "../stan/normal.json"
-    model_bs = bs.StanModel(model_lib=program_path, data=data_path)
+    stepsize = 0.5
+    model_bs = create_model('normal')
+    D = model.param_unc_num()
     rng = np.random.default_rng(seed)
-    theta0 = rng.normal(loc=0, scale=1, size=D)  # draw from stationary distribution
-    sampler = ta.GistSampler(
+    theta0 = rng.normal(size=D)
+    sampler = gs.GistSampler(
         model=model_bs, stepsize=stepsize, theta=theta0, frac=0.0, rng=rng
+    )
+    sampler = ms.MultinomialSampler(
+        model=model_bs, stepsize=stepsize, theta=theta0, steps=10, rng=rng
+    )
+    sampler = sas.StepAdaptSampler(
+        model=model_bs, rng=rng, integration_time=5, theta=theta0,
+        min_accept_prob=0.8
     )
     N = 100_000
 
@@ -641,20 +680,22 @@ def learning_curve_plot():
 
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
-    abs_err = np.abs(cumsum_draws) / divisors
-    avg_abs_err = np.mean(abs_err, axis=1)
-
+    sq_err = (cumsum_draws / divisors)**2
+    mean_sq_err = np.mean(sq_err, axis=1)
+    root_mean_sq_err = np.sqrt(mean_sq_err)
+    
     draws_sq = draws ** 2
     cumsum_draws_sq = np.cumsum(draws_sq, axis=0)
-    abs_err_sq = np.abs(cumsum_draws_sq / divisors - 1)  # E[ChiSquare(1)] = 1
-    avg_abs_err_sq = np.mean(abs_err_sq, axis=1)
+    sq_err_sq = (cumsum_draws_sq / divisors - 1)**2  # E[ChiSquare(1)] = 1
+    mean_sq_err_sq = np.mean(sq_err_sq, axis=1)
+    root_mean_sq_err_sq = np.sqrt(mean_sq_err_sq)
 
-    errs = np.concatenate([avg_abs_err, avg_abs_err_sq])
+    errs = np.concatenate([root_mean_sq_err, root_mean_sq_err_sq])
     estimands = np.concatenate([np.array(["theta"] * N), np.array(["theta**2"] * N)])
-    iteration = np.arange(1, len(avg_abs_err) + 1)
+    iteration = np.arange(1, len(mean_sq_err) + 1)
     iterations = np.concatenate([iteration, iteration])
     df = pd.DataFrame(
-        {"iteration": iterations, "E[|err|]": errs, "estimand": estimands}
+        {"iteration": iterations, "RMSE": errs, "estimand": estimands}
     )
     lines_df = pd.DataFrame(
         {
@@ -666,7 +707,7 @@ def learning_curve_plot():
         }
     )
     plot = (
-        pn.ggplot(df, pn.aes(x="iteration", y="E[|err|]"))
+        pn.ggplot(df, pn.aes(x="iteration", y="RMSE"))
         + pn.geom_line()
         + pn.scale_x_log10(limits=(10, N))
         + pn.scale_y_log10()
@@ -683,13 +724,16 @@ def learning_curve_plot():
 ### MAIN ###
 
 # Generate plots for paper
-    
-# uniform_interval_plot(num_seeds = 200, num_draws=100)
-# learning_curve_plot()
-# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
-for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-    vs_nuts_plot(val_type)
 
+# funnel_test()
+# learning_curve_plot()
+all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+#    vs_nuts_plot(val_type)
+# uniform_interval_plot(num_seeds = 200, num_draws=100)
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+#     vs_nuts_plot(val_type)
 
 # Ongoing experimentation
 
