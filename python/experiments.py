@@ -521,7 +521,7 @@ def vs_nuts_plot(val_type):
     df = pd.read_csv("all-vs-nuts.csv")
     rmse_df = df[df["val_type"] == val_type]
     rmse_df["label"] = rmse_df.apply(
-        lambda x: "NUTS" if x["sampler"] == "NUTS" else f"GIST-{x['binom_prob']}", axis=1
+        lambda x: "NUTS" if x["sampler"] == "NUTS" else f"GIST{x['binom_prob']}", axis=1
     )
     rmse_df["fill"] = rmse_df["sampler"].apply(
         lambda x: "lightgrey" if x == "NUTS" else "white"
@@ -727,9 +727,9 @@ def learning_curve_plot():
 
 # funnel_test()
 # learning_curve_plot()
-all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
-# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-#    vs_nuts_plot(val_type)
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+    vs_nuts_plot(val_type)
 # uniform_interval_plot(num_seeds = 200, num_draws=100)
 # all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
