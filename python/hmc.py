@@ -13,8 +13,17 @@ class HmcSamplerBase:
         return self
 
     def __next__(self):
-        return self.draw()
+        return self.safe_draw()
 
+    def safe_draw(self):
+        theta, rho = self._theta, self._rho
+        try:
+            return self.draw()
+        except Exception as e:
+            print(f"EXCEPTION: {e}")
+            self._theta, self._rho = theta, rho
+            return self._theta, self._rho
+    
     def leapfrog_step(self, theta, rho):
         _, grad = self._model.log_density_gradient(theta)
         rho2 = rho + 0.5 * self._stepsize * grad
@@ -39,7 +48,7 @@ class HmcSamplerBase:
         thetas = np.empty((M, D), dtype=np.float64)
         thetas[0, :] = self._theta
         for m in range(1, M):
-            thetas[m, :], _ = self.draw()
+            thetas[m, :], _ = self.safe_draw()
         return thetas
 
     def sample_constrained(self, M):
@@ -47,6 +56,6 @@ class HmcSamplerBase:
         thetas = np.empty((M, D), dtype=np.float64)
         thetas[0, :] = self._model.param_constrain(self._theta)
         for m in range(1, M):
-            theta_m, _ = self.draw()
+            theta_m, _ = self.safe_draw()
             thetas[m, :] = self._model.param_constrain(theta_m)
         return thetas
