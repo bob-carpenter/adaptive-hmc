@@ -9,7 +9,10 @@ import pandas as pd
 import logging
 import traceback
 import warnings
-
+import os
+print("New Bridgestan")
+print(os.environ.get('BRIDGESTAN'))
+print("\n ?")
 
 class NutsFit:
     """Object to store the result of a NUTS run"""
@@ -271,6 +274,7 @@ def gist_experiment(
     model_bs = bs.StanModel(
         model_lib=program_path, data=data, capture_stan_prints=False
     )
+    print("Did Stan model?")
     rng = np.random.default_rng(seed)
     theta_unc = model_bs.param_unconstrain(theta_cons)
     sampler = gs.GistSampler(
@@ -398,8 +402,8 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
     columns = ["model", "sampler", "stepsize", "binom_prob", "val_type", "val"]
     df = pd.DataFrame(columns=columns)
     for program_name in model_names():
-        program_path = "../stan/" + program_name + ".stan"
-        data_path = "../stan/" + program_name + ".json"
+        program_path = "./stan/" + program_name + ".stan"
+        data_path = "./stan/" + program_name + ".json"
         print(f"\nMODEL: {program_path}")
         print("============================================================")
         nuts_fit = nuts_adapt(
@@ -685,7 +689,7 @@ def learning_curve_plot():
     
 # uniform_interval_plot(num_seeds = 200, num_draws=100)
 # learning_curve_plot()
-all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+all_vs_nuts(num_seeds = 1, num_draws = 1, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
 #     vs_nuts_plot(val_type)
 
