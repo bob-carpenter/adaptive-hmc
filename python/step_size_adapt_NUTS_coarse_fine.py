@@ -3,7 +3,7 @@ import numpy as np
 import scipy as sp
 
 #This file contains many comments at Nawaf's request
-class StepAdapt_NUTS_Coarse_Fine_Sampler(hmc.HmcSamplerBase):
+class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
     def __init__(self,
                  model,
                  rng,
@@ -20,12 +20,13 @@ class StepAdapt_NUTS_Coarse_Fine_Sampler(hmc.HmcSamplerBase):
         self._max_step_size_search_depth = max_step_size_search_depth
         self._current_number_intermediate_leapfrog_steps = 1
         self._max_nuts_search_depth = max_nuts_depth
-
+        self._bernoulli_sequence = self._rng.integers(low = 0, high = 2, size = self._max_step_size_search_depth)
 
     def draw(self):
         self._stepsize = self._max_step_size
         self._current_number_intermediate_leapfrog_steps = 1
-        #Reset the step_size and the number of leapfrog steps
+        self._bernoulli_sequence = self._rng.integers(low=0, high=2, size=self._max_step_size_search_depth)
+        #Reset the step_size, the number of leapfrog steps, and the entire sequence of Bernoulli draws
 
         self._rho = self._rng.normal(size=self._model.param_unc_num())
         theta, rho = self._theta, self._rho
@@ -86,7 +87,8 @@ class StepAdapt_NUTS_Coarse_Fine_Sampler(hmc.HmcSamplerBase):
 
 
         for i in range(max_height):
-            forward_or_backward_choice = self._rng.integers(0, 2)
+            #forward_or_backward_choice = self._rng.integers(0, 2)
+            forward_or_backward_choice = self._bernoulli_sequence[i]
             #Select extension forward or backward
             if forward_or_backward_choice == 0:
                 #Backward extension
