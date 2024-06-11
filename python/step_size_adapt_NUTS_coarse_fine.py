@@ -48,6 +48,7 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
                     self._theta = theta_prime
                     return theta_prime, rho_prime
                     #Return once the energy change meets the acceptance criterion
+
                 self._stepsize = self._stepsize / 2
                 self._current_number_intermediate_leapfrog_steps  *= 2
             except Exception as e:
