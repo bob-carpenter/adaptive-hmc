@@ -1,6 +1,7 @@
 import hmc
 import numpy as np
 import scipy as sp
+import traceback
 
 #This file contains many comments at Nawaf's request
 class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
@@ -20,12 +21,12 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         self._max_step_size_search_depth = max_step_size_search_depth
         self._current_number_intermediate_leapfrog_steps = 1
         self._max_nuts_search_depth = max_nuts_depth
-        self._bernoulli_sequence = self._rng.integers(low = 0, high = 2, size = self._max_step_size_search_depth)
+        self._bernoulli_sequence = self._rng.integers(low = 0, high = 2, size = self._max_nuts_search_depth)
 
     def draw(self):
         self._stepsize = self._max_step_size
         self._current_number_intermediate_leapfrog_steps = 1
-        self._bernoulli_sequence = self._rng.integers(low=0, high=2, size=self._max_step_size_search_depth)
+        self._bernoulli_sequence = self._rng.integers(low=0, high=2, size=self._max_nuts_search_depth)
         #Reset the step_size, the number of leapfrog steps, and the entire sequence of Bernoulli draws
 
         self._rho = self._rng.normal(size=self._model.param_unc_num())
@@ -33,21 +34,28 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         #Redraw the momentum, set theta, rho to the current state
 
         for i in range(self._max_step_size_search_depth):
-            #Begin searching the step_size refinement process
-            (theta_prime,
-             rho_prime,
-             energy_max,
-             energy_min) = self.Coarse_Fine_NUTS(theta, rho,self._max_nuts_search_depth)
-            #The new iterates are drawn from the modified version of NUTS
-            #The integrator gets more refined in each stage, but NUTS evaluates
-            #the No-U-Turn condition only at iterates corresponding to the coarest grid points
+            try:
+                #Begin searching the step_size refinement process
+                (theta_prime,
+                 rho_prime,
+                 energy_max,
+                 energy_min) = self.Coarse_Fine_NUTS(theta, rho,self._max_nuts_search_depth)
+                #The new iterates are drawn from the modified version of NUTS
+                #The integrator gets more refined in each stage, but NUTS evaluates
+                #the No-U-Turn condition only at iterates corresponding to the coarest grid points
 
-            if -(energy_max - energy_min)> self._log_min_accept_prob:
-                self._theta = theta_prime
-                return theta_prime, rho_prime
-                #Return once the energy change meets the acceptance criterion
-            self._stepsize = self._stepsize / 2
-            self._current_number_intermediate_leapfrog_steps  *= 2
+                if -(energy_max - energy_min)> self._log_min_accept_prob:
+                    self._theta = theta_prime
+                    return theta_prime, rho_prime
+                    #Return once the energy change meets the acceptance criterion
+                self._stepsize = self._stepsize / 2
+                self._current_number_intermediate_leapfrog_steps  *= 2
+            except Exception as e:
+                #If we encounter an error, cut the step size in half
+                #and double the number of intermediate leapfrog steps
+                traceback.print_exc()
+                self._stepsize = self._stepsize / 2
+                self._current_number_intermediate_leapfrog_steps *= 2
             #If we haven't met the acceptance criterion, cut the step size in half
             #and double the number of "intermediate" leapfrog steps between
             #corresponding points on the coarse grid
@@ -279,7 +287,7 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         #Return whether or not the interval defined by the given endpoints
         #has a u-turn
         delta_theta = right_theta - left_theta
-        return (np.dot(delta_theta, left_rho) < 0) or (np.dot(delta_theta, right_rho) < 0)
+        return (np.dot(delta_theta, left_rho) < 0) and (np.dot(delta_theta, right_rho) < 0)
 
     def iterated_leapfrog_with_energy_max_min(self, theta, rho):
         #Compute \Phi^{2^{number of stepsize_halvings}} while simultaneously computing the energy
