@@ -639,7 +639,8 @@ def create_model(program_name):
 def funnel_test():
     # accept 0.6, N = 10_000, time=10; 0.6, 10_000, 20
     start_time = time.time()
-    seed = 3946456389
+    seed = 12909067
+    #seed = 3946456389
     model = create_model('funnel')
     D = model.param_unc_num()
     rng = np.random.default_rng(seed)
@@ -686,7 +687,14 @@ def funnel_test_nuts():
     theta0[0] = rng.normal(scale=3)
     theta0[1:D] = rng.normal(scale=np.exp(theta0[0] / 2), size=(D - 1))
     min_accept = .65
-    sampler = spn.StepAdapt_NUTS_Coarse_Fine_Sampler(model,rng, theta0,min_accept,.25, 10, 10)
+    max_step = .5
+    sampler = spn.StepadaptNutsCoarseFineSampler(model,
+                                                 rng,
+                                                 theta0,
+                                                 min_accept,
+                                                 .5,
+                                                 10,
+                                                 10)
 
     N = 100_000
     draws = sampler.sample_constrained(N)
@@ -697,10 +705,52 @@ def funnel_test_nuts():
             + pn.geom_histogram(pn.aes(y='..density..', x='log sigma'), bins=31, color='black', fill='white')
             + pn.stat_function(fun=lambda x: sp.stats.norm.pdf(x, 0, 3), color='red')
             + pn.scale_x_continuous(limits=(-9, 9), breaks=(-9, -6, -3, 0, 3, 6, 9))
-            + pn.ggtitle(f"NUTS adaptive funnel: acceptance = {min_accept}, N_sample = {N}, seed = {seed}")
+            + pn.ggtitle(f"NUTS adaptive funnel: acceptance = {min_accept}, N_sample = {N} \n max_step = {max_step}, seed = {seed}")
     )
-    folder = "/Users/milostevenmarsden/Documents/Simulations/June2024/NUTS_adaptive_step_funnel_coarse_fine"
-    file =  f"funnel_test_min_accept_{min_accept}_N_{N}_seed_{seed}.png"
+    folder = "/Users/milostevenmarsden/Documents/Simulations/June2024/NUTS-Coupled-Coarse-Fine"
+    file =  f"funnel_test_min_accept_{min_accept}_N_{N}_seed_{seed}_max_step_{max_step}.png"
+
+    plot.save(filename = f"{folder}/{file}")
+    plot.show()
+
+    end_time = time.time()
+    seconds, minutes, hours = format_time(start_time, end_time)
+    print(f"The evaluation took: {hours} h : {minutes} m: {seconds} s for {N} samples")
+
+
+def normal_test_nuts():
+    # accept 0.6, N = 10_000, time=10; 0.6, 10_000, 20
+    start_time = time.time()
+    #timing
+    seed = 12909067
+    model = create_model('normal')
+    D = model.param_unc_num()
+    rng = np.random.default_rng(seed)
+    theta0 = np.zeros(D)
+    theta0[0] = rng.normal(scale=3)
+    theta0[1:D] = rng.normal(scale=np.exp(theta0[0] / 2), size=(D - 1))
+    min_accept = .65
+    sampler = spn.StepadaptNutsCoarseFineSampler(model,
+                                                 rng,
+                                                 theta0,
+                                                 min_accept,
+                                                 .05,
+                                                 1,
+                                                 10)
+
+    N = 1000
+    draws = sampler.sample_constrained(N)
+    x = draws[:, 0]
+    x_df = pd.DataFrame({'log sigma': x})
+    plot = (
+            pn.ggplot(mapping=pn.aes(x='log sigma'), data=x_df)
+            + pn.geom_histogram(pn.aes(y='..density..', x='log sigma'), bins=31, color='black', fill='white')
+            + pn.stat_function(fun=lambda x: sp.stats.norm.pdf(x, 0, 1), color='red')
+            + pn.scale_x_continuous(limits=(-9, 9), breaks=(-9, -6, -3, 0, 3, 6, 9))
+            + pn.ggtitle(f"NUTS adaptive normal: acceptance = {min_accept}, N_sample = {N}, seed = {seed}")
+    )
+    folder = "/Users/milostevenmarsden/Documents/Simulations/June2024/NUTS-Coupled-Coarse-Fine"
+    file =  f"normal_test_min_accept_{min_accept}_N_{N}_seed_{seed}.png"
 
     plot.save(filename = f"{folder}/{file}")
     plot.show()
@@ -778,9 +828,10 @@ def learning_curve_plot():
 
 ### MAIN ###
 funnel_test_nuts()
+#normal_test_nuts()
 # Generate plots for paper
 
-# funnel_test()
+#funnel_test()
 # learning_curve_plot()
 # all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
 # for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:

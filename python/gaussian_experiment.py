@@ -62,8 +62,6 @@ if __name__ == '__main__':
     start_time = time.time()
     # Initial attempt to just get something running
 
-
-
     model_name = "normal"
     program_path = Path("../stan") / f"{model_name}.stan"
     data_path = Path("../stan") / f"{model_name}.json"
@@ -78,13 +76,13 @@ if __name__ == '__main__':
     # print(f"Log density gradient: {model_bs.log_density_gradient(np.ones(model_bs.param_unc_num()))}\n")
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(size=model_bs.param_unc_num())
-    sampler = spn.StepAdapt_NUTS_Coarse_Fine_Sampler(model_bs,
-                                                     rng,
-                                                     theta0,
-                                                     0.99,
-                                                     1,
-                                                     8,
-                                                     9)
+    sampler = spn.StepadaptNutsCoarseFineSampler(model_bs,
+                                                 rng,
+                                                 theta0,
+                                                 0.99,
+                                                 1,
+                                                 8,
+                                                 9)
     thetas = sampler.sample(n_samples)
     #print(f"Here are the actual samples: {thetas}")
     print(np.mean(thetas, axis=0))

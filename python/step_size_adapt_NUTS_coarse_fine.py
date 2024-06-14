@@ -19,13 +19,13 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         self._log_min_accept_prob = np.log(min_accept_prob)
         self._max_step_size= max_step_size
         self._max_step_size_search_depth = max_step_size_search_depth
-        self._current_number_intermediate_leapfrog_steps = 1
+        self._number_fine_grid_leapfrog_steps = 1
         self._max_nuts_search_depth = max_nuts_depth
         self._bernoulli_sequence = self._rng.integers(low = 0, high = 2, size = self._max_nuts_search_depth)
 
     def draw(self):
         self._stepsize = self._max_step_size
-        self._current_number_intermediate_leapfrog_steps = 1
+        self._number_fine_grid_leapfrog_steps = 1
         self._bernoulli_sequence = self._rng.integers(low=0, high=2, size=self._max_nuts_search_depth)
         #Reset the step_size, the number of leapfrog steps, and the entire sequence of Bernoulli draws
 
@@ -50,13 +50,13 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
                     #Return once the energy change meets the acceptance criterion
 
                 self._stepsize = self._stepsize / 2
-                self._current_number_intermediate_leapfrog_steps  *= 2
+                self._number_fine_grid_leapfrog_steps  *= 2
             except Exception as e:
                 #If we encounter an error, cut the step size in half
                 #and double the number of intermediate leapfrog steps
                 traceback.print_exc()
                 self._stepsize = self._stepsize / 2
-                self._current_number_intermediate_leapfrog_steps *= 2
+                self._number_fine_grid_leapfrog_steps *= 2
             #If we haven't met the acceptance criterion, cut the step size in half
             #and double the number of "intermediate" leapfrog steps between
             #corresponding points on the coarse grid
@@ -207,9 +207,7 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         #Evaluate all the relevant quantities over the left subtree. This has the same left endpoint
         #as the current tree, but with height one less
 
-        sub_u_turn = sub_u_turn_subtree_left
-
-        if sub_u_turn:
+        if sub_u_turn_subtree_left:
             return (theta, rho, theta, rho, 0, True,0, 0)
             #Immediately return if the subtree has a u-turn
 
@@ -230,13 +228,13 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
          sample_rho_subtree_right,
          weight_subtree_right,
          sub_u_turn_subtree_right,
-         energy_max_fine_grid_right   ,
+         energy_max_fine_grid_right,
          energy_min_fine_grid_right) = self.evaluate_proposed_subtree(theta_left_subtree_right,
                                                                       rho_left_subtree_right,
                                                                       height - 1)
         #Obtain all the corresponding quantities over the right subtree
 
-        sub_u_turn = (sub_u_turn) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta_right_subtree_left,
+        sub_u_turn = (sub_u_turn_subtree_left) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta_right_subtree_left,
                                                                                           rho_right_subtree_left,
                                                                                           theta_right_subtree_right,
                                                                                           rho_right_subtree_right)
@@ -297,7 +295,7 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         theta_current = theta
         rho_current = rho
 
-        for i in range(self._current_number_intermediate_leapfrog_steps):
+        for i in range(self._number_fine_grid_leapfrog_steps):
             theta_current, rho_current = self.leapfrog_step(theta_current, rho_current)
             current_energy = -self.log_joint(theta_current, rho_current)
             max_energy = max(max_energy, current_energy)
