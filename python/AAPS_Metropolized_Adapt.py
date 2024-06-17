@@ -112,57 +112,6 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
 
         self._theta = theta
         return self._theta, rho
-    def obtain_interval(self, theta, rho, number_apogees, shift):
-
-        # ::array -> array -> int -> int -> (int, int, [int])
-        # This function implements finding the endpoint in the Apogee to
-        # Apogee interval. In principle this should not differ too much for other
-        # similar conditions
-        self._stepsize = self._max_step_size
-        number_steps_forward = 0
-        number_steps_backward = 0
-        iterate_numbers_marking_segments = [0 for _ in range(number_apogees+1)]
-        current_theta = theta
-        current_rho = rho
-        _, current_grad_u = self._model.log_density_gradient(current_theta)
-        current_up_down_status = np.dot(current_rho, current_grad_u)
-        number_segments_to_left = shift
-
-        while number_segments_to_left < number_apogees:
-            number_steps_forward += 1
-            next_theta, next_rho = self.leapfrog_step(current_theta, current_rho)
-            _, next_grad_u = self._model.log_density_gradient(next_theta)
-            next_up_down_status = np.dot(next_rho, next_grad_u)
-            if (current_up_down_status * next_up_down_status) < 0:
-                number_segments_to_left += 1
-                iterate_numbers_marking_segments[number_segments_to_left] = number_steps_forward
-            current_theta = next_theta
-            current_rho = next_rho
-            current_up_down_status = next_up_down_status
-
-        current_theta = theta
-        current_rho = rho
-        _, current_grad_u = self._model.log_density_gradient(current_theta)
-        current_up_down_status = np.dot(current_rho, current_grad_u)
-        number_segments_to_left = shift
-
-        # I dont like this code duplication, so I will come back to this later
-        # to change it. Right now, I just want to get the code running
-
-        while number_segments_to_left >= 0:
-            number_steps_backward -= 1
-            next_theta, next_rho = self.leapfrog_step(current_theta, -current_rho)
-            next_rho = -next_rho
-            _, next_grad_u = self._model.log_density_gradient(next_theta)
-            next_up_down_status = np.dot(next_rho, next_grad_u)
-            if (current_up_down_status * next_up_down_status) < 0:
-                iterate_numbers_marking_segments[number_segments_to_left] = number_steps_backward + 1
-                number_segments_to_left -= 1
-            current_theta = next_theta
-            current_rho = next_rho
-            current_up_down_status = next_up_down_status
-
-        return number_steps_backward, number_steps_forward, iterate_numbers_marking_segments
     def adapt_step_size(self, theta, rho, number_left, number_right):
         # ::array -> array -> int -> int -> (float, float)
         self._stepsize = self._max_step_size
@@ -183,31 +132,7 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
         return (self._max_step_size_search_depth - 1,
                 self._stepsize*random_multiplier_step_size,
                 int(self._number_fine_grid_leapfrog_steps/random_multiplier_step_size))
-    def compute_energy_range(self, theta, rho, number_left, number_right):
-        max_energy = min_energy = -self.log_joint(theta, rho)
-        theta_current = theta
-        rho_current = rho
 
-        for i in range(number_right-1):
-            (theta_current,
-             rho_current,
-             max_over_fine,
-             min_over_fine) = self.iterated_leapfrog_with_energy_max_min(theta_current, rho_current)
-            max_energy = max(max_energy, max_over_fine)
-            min_energy = min(min_energy, min_over_fine)
-
-        theta_current = theta
-        rho_current = rho
-
-        for i in range(abs(number_left)):
-            (theta_current,
-             rho_current,
-             max_over_fine,
-             min_over_fine) = self.iterated_leapfrog_with_energy_max_min(theta_current, -rho_current)
-            rho_current = -rho_current
-            max_energy = max(max_energy, max_over_fine)
-            min_energy = min(min_energy, min_over_fine)
-        return max_energy, min_energy
     def generate_proposal(self, theta, rho, step_size, number_intermediate_leapfrog_steps, number_left, number_right,
                           iterate_numbers_marking_segments, number_apogees, shift):
         # ::array -> array -> float -> int -> int -> [int] -> (array, array, int, int, float)
@@ -315,19 +240,10 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
     def compute_stepsize_accept_ratio(self, step_size, step_size_from_reverse):
         # ::float -> float -> float
         return abs(np.log(step_size/step_size_from_reverse)) <= 1
-    def iterated_leapfrog_with_energy_max_min(self, theta, rho):
-        # Compute \Phi^{2^{number of stepsize_halvings}} while simultaneously computing the energy
-        # and min along the extension
-        max_energy = min_energy = -self.log_joint(theta, rho)
-        theta_current = theta
-        rho_current = rho
-        for i in range(self._number_fine_grid_leapfrog_steps):
-            theta_current, rho_current = self.leapfrog_step(theta_current, rho_current)
-            current_energy = -self.log_joint(theta_current, rho_current)
-            max_energy = max(max_energy, current_energy)
-            min_energy = min(min_energy, current_energy)
 
-        return theta_current, rho_current, max_energy, min_energy
+    def log_density_gradient_at_theta(self, theta):
+        return self._model.log_density_gradient(theta)
+
 class CoarseLevelIntervalAAPS:
     def __init__(self, sampler, rng, theta, rho, stepsize, apogee_factor):
         self._sampler = sampler
@@ -346,34 +262,34 @@ class CoarseLevelIntervalAAPS:
         self._number_right = 0
         self._sample_theta = theta
         self._sample_rho = rho
+        self._sample_index = 0
         self._sample_segment_index = 0
 
         self._sampler.set_stepsize(self._stepsize)
-        self.compute_interval()
+        self.iterate_over_both_sides_coarse()
         self._sampler.stepsize_reset_original()
-
-    def compute_interval(self):
-        # ::array -> array -> int -> int -> (int, int, [int])
+    def iterate_over_both_sides_coarse(self):
+        # ::None -> None
         # This function implements finding the endpoint in the Apogee to
         # Apogee interval. In principle this should not differ too much for other
         # similar conditions
-        self._iterate_num_segments_right = self.iterate_over_coarse_grid(1, self._number_apogees - self._shift)
-        self._iterate_num_segments_left = self.iterate_over_coarse_grid(-1, self._shift + 1)
+        self._iterate_num_segments_right = self.iterate_over_single_side_coarse(1, self._number_apogees - self._shift)
+        self._iterate_num_segments_left = self.iterate_over_single_side_coarse(-1, self._shift + 1)
         self._number_left = self._iterate_num_segments_left[-1]
         self._number_right = self._iterate_num_segments_right[-1]
-    def iterate_over_coarse_grid(self, direction, number_apogees):
+    def iterate_over_single_side_coarse(self, direction, number_apogees):
         iterate_numbers_marking_segments = []
         current_theta = self._theta
         current_rho = self._rho
         current_iterate_index = 0
         number_changes_seen = 0
-        _, current_grad = self._sampler._model.log_density_gradient(current_theta)
+        _, current_grad = self._sampler.log_density_gradient_at_theta(current_theta)
         current_sign = np.dot(current_rho, current_grad)
         while number_changes_seen < number_apogees:
             next_theta, next_rho = self._sampler.leapfrog_step(current_theta, direction*current_rho)
             next_rho = direction*next_rho
             #If the direction is -1, then we are going backwards
-            _, next_grad = self._sampler._model.log_density_gradient(next_theta)
+            _, next_grad = self._sampler.log_density_gradient_at_theta(next_theta)
             #We're calcluating the gradient twice. In the next
             #version lets either cache the gradient or compute this during
             #the leapfrog step
@@ -398,11 +314,18 @@ class CoarseLevelIntervalAAPS:
             if current_weight/self._total_weight < self._rng.uniform():
                 self._sample_theta = current_theta
                 self._sample_rho = current_rho
-                self._sample_segment_index = number_changes_seen
+                self._sample_segment_index = direction*number_changes_seen
+                self._sample_index = current_iterate_index
 
             self._total_weight += current_weight
 
         return iterate_numbers_marking_segments
+    def interval_markers_left(self):
+        return self._iterate_num_segments_left
+    def interval_markers_right(self):
+        return self._iterate_num_segments_right
+    def stepsize(self):
+        return self._stepsize
 
 class FineLevelIntervalAAPS:
     def __init__(self, sampler, rng, theta, rho, coarse_grid, depth):
@@ -412,7 +335,7 @@ class FineLevelIntervalAAPS:
         self._rho = rho
         self._coarse_grid = coarse_grid
         self._depth = depth
-        self._stepsize = self._coarse_grid._stepsize
+        self._stepsize = self._coarse_grid.stepsize()/(2**self._depth)
         self._number_fine_grid_leapfrog_steps = 2**self._depth
         self._max_energy = -self._sampler.log_joint(self._theta, self._rho)
         self._min_energy = self._max_energy
@@ -420,8 +343,41 @@ class FineLevelIntervalAAPS:
         self._sample_theta = theta
         self._sample_rho = rho
         self._sample_coarse_grid_segment_index = 0
-        self._iterate_numbers_marking_segments = []
-    def iterate_over_fine_leapfrog_steps(self):
+        self._sample_index = 0
+        self._iterate_num_segments_left = self._coarse_grid.interval_markers_left()
+        self._iterate_num_segments_right = self._coarse_grid.interval_markers_right()
+
+        self._sampler.set_stepsize(self._stepsize)
+        self.iterate_over_both_sides_fine()
+        self._sampler.stepsize_reset_original()
+
+    def iterate_over_both_sides_fine(self):
+        self.iterate_over_single_side_fine(1, self._iterate_num_segments_right)
+        self.iterate_over_single_side_fine(-1, self._iterate_num_segments_left)
+    def iterate_over_single_side_fine(self, direction, iterate_num_marking_segments):
+        current_theta = self._theta
+        current_rho = self._rho
+        current_iterate_index = 0
+        current_energy = -self._sampler.log_joint(current_theta, current_rho)
+        current_weight = np.exp(-current_energy)
+        self._max_energy = max(self._max_energy, current_energy)
+        self._min_energy = min(self._min_energy, current_energy)
+
+        for iterate_index, segment_marker in enumerate(iterate_num_marking_segments):
+            for index in range(current_iterate_index, segment_marker):
+                current_theta, current_rho = self.iterated_leapfrog_with_energy_max_min(current_theta,current_rho)
+                current_energy = -self._sampler.log_joint(current_theta, current_rho)
+                current_weight = np.exp(-current_energy)
+                if current_weight/self._total_weight < self._rng.uniform():
+                    self._sample_theta = current_theta
+                    self._sample_rho = current_rho
+                    self._sample_coarse_grid_segment_index = direction*iterate_index
+                    self._sample_index = index + 1
+
+                self._total_weight += current_weight
+                self._max_energy = max(self._max_energy, current_energy)
+                self._min_energy = min(self._min_energy, current_energy)
+        return None
     def iterated_leapfrog_with_energy_max_min(self, theta, rho):
         # Compute \Phi^{2^{number of stepsize_halvings}} while simultaneously computing the energy
         # and min along the extension
