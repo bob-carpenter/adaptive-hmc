@@ -24,29 +24,52 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
         self._apogee_selection_parameter = apogee_selection_parameter
         self._rejects = 0
         self._no_return_rejects = 0
+        self._step_size_non_overlap_rejects = 0
 
     def set_stepsize(self, stepsize):
         self._stepsize = stepsize
     def stepsize_reset_original(self):
         self._stepsize = self._max_step_size
     def draw(self):
-
-        coarse_level_interval_current_state = CoarseLevelInterval(self, self._theta, self._rho, self._stepsize)
-        #fine_step_size_interval = self.adapt_step_size(coarse_level_interval)
-        #proposal_theta, proposal_rho = fine_step_size_interval.proposal()
-        #coarse_level_interval_proposal = CoarseLevelInterval(self, proposal_theta, proposal_rho, self._stepsize)
-        #fine_step_size_interval_proposal = self.adapt_step_size(coarse_level_interval_proposal)
-        #acceptance_probability = self.compute_acceptance_probability(fine_step_size_interval, fine_step_size_interval_proposal)
-        self._stepsize = self._max_step_size
-        self._number_fine_grid_leapfrog_steps = 1
-        # Reset/reinitialize the step size and number of fine grid leapfrog steps
-
         rho = self._rng.normal(size=self._model.param_unc_num())
         theta = self._theta
         number_apogees = self._rng.geometric(self._apogee_selection_parameter)
         shift = self._rng.integers(0, number_apogees)
-        # Resample the momentum, generate random number of apogees, and generate
-        # a random shift
+        coarse_level_interval_current_state = CoarseLevelIntervalAAPS(self,
+                                                                  self._rng,
+                                                                  self._theta,
+                                                                  self._rho,
+                                                                  self._stepsize,
+                                                                  apogee_factor= self._apogee_selection_parameter
+                                                                      )
+        fine_step_size_interval_initial = self.adapt_step_size(coarse_level_interval_current_state)
+        proposal_theta, proposal_rho = fine_step_size_interval_initial.proposal_phase_space()
+        coarse_level_interval_proposal = CoarseLevelIntervalAAPS(self,
+                                                             proposal_theta,
+                                                             proposal_rho,
+                                                             self._stepsize,
+                                                             number_apogees = coarse_level_interval_current_state.number_apogees(),
+
+                                                             )
+        fine_step_size_interval_proposal = self.adapt_step_size(coarse_level_interval_proposal)
+
+        accept_step_size = fine_step_size_interval_initial.step_size_acceptance(fine_step_size_interval_proposal)
+        self._step_size_non_overlap_rejects += (1 - accept_step_size)
+        ratio_norm_fact = (fine_step_size_interval_initial.normalization_factor()
+                           / fine_step_size_interval_proposal.normalization_factor())
+        accept_index_selection = fine_step_size_interval_proposal.accept_index_selection(fine_step_size_interval_initial)
+
+        self._no_return_rejects += (1 - accept_index_selection)
+        acceptance_probability = accept_step_size * ratio_norm_fact * accept_index_selection
+        if self._rng.uniform() < acceptance_probability:
+            theta = proposal_theta
+            rho = proposal_rho
+        else:
+            self._rejects += 1
+        self._theta = theta
+        return self._theta, rho
+
+        #acceptance_probability = self.compute_acceptance_probability(fine_step_size_interval, fine_step_size_interval_proposal)
 
         (number_left_initial,
          number_right_initial,
@@ -112,147 +135,57 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
 
         self._theta = theta
         return self._theta, rho
-    def adapt_step_size(self, theta, rho, number_left, number_right):
-        # ::array -> array -> int -> int -> (float, float)
-        self._stepsize = self._max_step_size
-        self._number_fine_grid_leapfrog_steps = 1
-        # Reset the adaptation state
+    def adapt_step_size(self, coarse_level_interval, randomize = True):
+        #::CoarseLevelInterval -> (int, FineLevelInterval)
+        last_interval = coarse_level_interval
+        current_fine_level_interval = FineLevelIntervalAAPS(self,
+                                                        self._rng,
+                                                        self._theta,
+                                                        self._rho,
+                                                        coarse_level_interval,
+                                                        1)
+        energy_range = current_fine_level_interval.energy_range()
+        while energy_range > -self._log_min_accept_prob and depth < self._max_step_size_search_depth:
+            last_interval = current_fine_level_interval
+            current_fine_level_interval = FineLevelIntervalAAPS(self,
+                                                            self._rng,
+                                                            self._theta,
+                                                            self._rho,
+                                                            coarse_level_interval,
+                                                            depth+1)
+            energy_range = current_fine_level_interval.energy_range()
 
-        random_multiplier_step_size = 2**self._rng.integers(-1, 2)
-        for i in range(self._max_step_size_search_depth):
-            energy_max_over_fine_grid, energy_min_over_fine_grid = self.compute_energy_range(theta,
-                                                                                             rho,
-                                                                                             number_left,
-                                                                                             number_right)
-            if energy_max_over_fine_grid - energy_min_over_fine_grid < -self._log_min_accept_prob:
-                return (i, self._stepsize*random_multiplier_step_size,
-                int(self._number_fine_grid_leapfrog_steps/random_multiplier_step_size))
-            self._stepsize = self._stepsize/2
-            self._number_fine_grid_leapfrog_steps *= 2
-        return (self._max_step_size_search_depth - 1,
-                self._stepsize*random_multiplier_step_size,
-                int(self._number_fine_grid_leapfrog_steps/random_multiplier_step_size))
+        if randomize:
+            return self.interval_selection_after_random_stepsize(depth, last_interval, current_fine_level_interval)
+        return  current_fine_level_interval
 
-    def generate_proposal(self, theta, rho, step_size, number_intermediate_leapfrog_steps, number_left, number_right,
-                          iterate_numbers_marking_segments, number_apogees, shift):
-        # ::array -> array -> float -> int -> int -> [int] -> (array, array, int, int, float)
-        self._stepsize = step_size
-        self._number_fine_grid_leapfrog_steps = number_intermediate_leapfrog_steps
-        current_theta = theta
-        current_rho = rho
-        sample_theta = theta
-        sample_rho = rho
-        current_energy = -self.log_joint(current_theta, current_rho)
-        total_weight = np.exp(-current_energy)
-        current_index = 0
-        current_coarse_grid_segment_number = 0
-        current_segment_left_index = iterate_numbers_marking_segments[shift]
-        current_segment_right_index = iterate_numbers_marking_segments[shift+1]
-
-        while current_index < number_right-1:
-            # This is very unpythonic
-            next_theta, next_rho, *_ = self.iterated_leapfrog_with_energy_max_min(current_theta, current_rho)
-            next_energy = -self.log_joint(next_theta, next_rho)
-            next_weight = np.exp(-next_energy)
-            current_index += 1
-
-            (sample_theta,
-             sample_rho) = self.resample_proposal(sample_theta,
-                                                  sample_rho,
-                                                  current_theta,
-                                                  current_rho,
-                                                  total_weight,
-                                                  next_weight)
-
-            if current_index == current_segment_right_index:
-                current_coarse_grid_segment_number += 1
-                current_segment_left_index = current_segment_right_index
-                current_segment_right_index = iterate_numbers_marking_segments[current_coarse_grid_segment_number + shift]
-
-            current_theta = next_theta
-            current_rho = next_rho
-            current_energy = next_energy
-            total_weight += next_weight
-
-        current_theta = theta
-        current_rho = rho
-        current_energy = -self.log_joint(current_theta, current_rho)
-        current_index = 0
-        current_segment_left_index = iterate_numbers_marking_segments[shift]
-        current_segment_right_index = iterate_numbers_marking_segments[shift+1]
-
-        while current_index >= number_left:
-            next_theta, next_rho, *_ = self.iterated_leapfrog_with_energy_max_min(current_theta, -current_rho)
-            next_rho = -next_rho
-            next_energy = -self.log_joint(next_theta, next_rho)
-            next_weight = np.exp(-next_energy)
-            current_index -= 1
-            sample_theta, sample_rho = self.resample_proposal(sample_theta,
-                                                              sample_rho,
-                                                              current_theta,
-                                                              current_rho,
-                                                              total_weight,
-                                                              next_weight)
-
-            if current_index == current_segment_left_index - 1:
-                current_coarse_grid_segment_number -= 1
-                current_segment_right_index = current_segment_left_index
-                current_segment_left_index = iterate_numbers_marking_segments[current_coarse_grid_segment_number + shift]
-
-            current_theta = next_theta
-            current_rho = next_rho
-            current_energy = next_energy
-            total_weight += next_weight
-
-        return sample_theta, sample_rho, current_index, current_coarse_grid_segment_number, total_weight
-    def compute_normalization_factor(self, theta,
-                                     rho,
-                                     generated_step_size_proposal,
-                                     num_intermediate_leapfrog_steps,
-                                     number_left,
-                                     number_right):
-
-        # ::array -> array -> int -> int -> float
-        self._stepsize = generated_step_size_proposal
-        self._number_fine_grid_leapfrog_steps = num_intermediate_leapfrog_steps
-        current_theta = theta
-        current_rho = rho
-        total_weight = np.exp(-self.log_joint(current_theta, current_rho))
-
-        for i in range(number_right-1):
-            next_theta, next_rho, *_ = self.iterated_leapfrog_with_energy_max_min(current_theta, current_rho)
-            next_weight = np.exp(-self.log_joint(next_theta, next_rho))
-            total_weight += next_weight
-            current_theta = next_theta
-            current_rho = next_rho
-
-        current_theta = theta
-        current_rho = rho
-        for i in range(abs(number_left)):
-            next_theta, next_rho, *_ = self.iterated_leapfrog_with_energy_max_min(current_theta, -current_rho)
-            next_rho = -next_rho
-            next_weight = np.exp(-self.log_joint(next_theta, next_rho))
-            total_weight += next_weight
-            current_theta = next_theta
-            current_rho = next_rho
-
-        return total_weight
-    def compute_stepsize_accept_ratio(self, step_size, step_size_from_reverse):
+    def compute_stepsize_accept_ratio(self, fine_grid_initial,depth_proposal):
         # ::float -> float -> float
         return abs(np.log(step_size/step_size_from_reverse)) <= 1
-
     def log_density_gradient_at_theta(self, theta):
         return self._model.log_density_gradient(theta)
+    def interval_selection_after_random_stepsize(self, depth, coarsegrid, last_interval, current_interval):
+        #::int -> CoarseLevelInterval -> CoarseLevelInterval -> CoarseLevelInterval
+        log_random_step_size_multiplier = self._rng.integers(-1, 2)
+        if log_random_step_size_multiplier == -1:
+            return last_interval
+        if log_random_step_size_multiplier == 0:
+            return current_interval
+        if log_random_step_size_multiplier == 1:
+            return FineLevelIntervalAAPS(self, self._rng, self._theta, self._rho, coarsegrid, depth+1)
+
 
 class CoarseLevelIntervalAAPS:
-    def __init__(self, sampler, rng, theta, rho, stepsize, apogee_factor):
+    def __init__(self, sampler, rng, theta, rho, stepsize, apogee_factor = None, num_apogees = None, shift = None):
         self._sampler = sampler
         self._rng = rng
         self._theta = theta
         self._rho = rho
         self._energy_max = -self._sampler.log_joint(self._theta, self._rho)
         self._energy_min = self._energy_max
+
         self._number_apogees = self._rng.geometric(apogee_factor)
+        self._depth = 0
         self._shift = self._rng.integers(0, self._number_apogees)
         self._stepsize = stepsize
         self._total_weight = np.exp(-self._sampler.log_joint(self._theta, self._rho))
@@ -263,7 +196,17 @@ class CoarseLevelIntervalAAPS:
         self._sample_theta = theta
         self._sample_rho = rho
         self._sample_index = 0
-        self._sample_segment_index = 0
+        self._sample_coarse_grid_segment_index = 0
+
+        if num_apogees is not None:
+            self._number_apogees = num_apogees
+        else:
+            self._number_apogees = self._rng.geometric(apogee_factor)
+
+        if shift is not None:
+            self._shift = shift
+        else:
+            self._shift = self._rng.integers(0, self._number_apogees)
 
         self._sampler.set_stepsize(self._stepsize)
         self.iterate_over_both_sides_coarse()
@@ -314,7 +257,7 @@ class CoarseLevelIntervalAAPS:
             if current_weight/self._total_weight < self._rng.uniform():
                 self._sample_theta = current_theta
                 self._sample_rho = current_rho
-                self._sample_segment_index = direction*number_changes_seen
+                self._sample_coarse_grid_segment_index = direction * number_changes_seen
                 self._sample_index = current_iterate_index
 
             self._total_weight += current_weight
@@ -326,6 +269,24 @@ class CoarseLevelIntervalAAPS:
         return self._iterate_num_segments_right
     def stepsize(self):
         return self._stepsize
+    def energy_range(self):
+        return self._energy_max, self._energy_min
+    def proposal_phase_space(self):
+        return self._sample_theta, self._sample_rho
+    def number_apogees(self):
+        return self._number_apogees
+    def proposal_shift(self):
+        return self._shift + self._sample_coarse_grid_segment_index
+    def step_size_acceptance(self, intial_fine_grid):
+        return int(abs(self._depth - intial_fine_grid._depth) <= 1)
+    def normalization_factor(self):
+        return self._total_weight
+
+    def accept_index_selection(self, initial_fine_grid):
+        proposal_index = -initial_fine_grid._sample_index
+        number_left = -self._iterate_num_segments_left[-1]
+        number_right = self._iterate_num_segments_right[-1]
+        return int((proposal_index <= number_right) and (proposal_index >= number_left))
 
 class FineLevelIntervalAAPS:
     def __init__(self, sampler, rng, theta, rho, coarse_grid, depth):
@@ -350,9 +311,8 @@ class FineLevelIntervalAAPS:
         self._sampler.set_stepsize(self._stepsize)
         self.iterate_over_both_sides_fine()
         self._sampler.stepsize_reset_original()
-
     def iterate_over_both_sides_fine(self):
-        self.iterate_over_single_side_fine(1, self._iterate_num_segments_right)
+        self.iterate_over_single_side_fines(1, self._iterate_num_segments_right)
         self.iterate_over_single_side_fine(-1, self._iterate_num_segments_left)
     def iterate_over_single_side_fine(self, direction, iterate_num_marking_segments):
         current_theta = self._theta
@@ -389,7 +349,19 @@ class FineLevelIntervalAAPS:
             self._max_energy = max(self._max_energy, current_energy)
             self._min_energy = min(self._min_energy, current_energy)
         return theta_current, rho_current
-
-
-
-
+    def energy_range(self):
+        return self._max_energy, self._min_energy
+    def proposal_phase_space(self):
+        return self._sample_theta, self._sample_rho
+    def proposal_shift(self):
+        return self._coarse_grid._shift + self._sample_coarse_grid_segment_index
+            #Accessing the private variable isn't ideal, but it really isn't that big of a deal
+    def step_size_acceptance(self, intial_fine_grid):
+        return int(abs(self._depth - intial_fine_grid._depth) <= 1)
+    def normalization_factor(self):
+        return self._total_weight
+    def accept_index_selection(self, initial_fine_grid):
+        proposal_index = -initial_fine_grid._sample_index
+        number_left = -self._iterate_num_segments_left[-1]
+        number_right = self._iterate_num_segments_right[-1]
+        return int((proposal_index <= number_right) and (proposal_index >= number_left))
