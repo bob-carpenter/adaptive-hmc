@@ -19,21 +19,17 @@ class StepAdapt_NUTS_Sampler(hmc.HmcSamplerBase):
         self._max_step_size_search_depth = max_step_size_search_depth
         self._max_nuts_search_depth = max_nuts_depth
 
-
     def draw(self):
         self._stepsize = self._max_step_size
         self._rho = self._rng.normal(size=self._model.param_unc_num())
         theta, rho = self._theta, self._rho
-
         for i in range(self._max_step_size_search_depth):
             theta_prime, rho_prime, energy_max, energy_min = self.NUTS(theta, rho, self._max_nuts_search_depth)
             if -(energy_max - energy_min)> self._log_min_accept_prob:
                 self._theta = theta_prime
                 return theta_prime, rho_prime
             self._stepsize = self._stepsize / 2
-
         self._theta = theta_prime
-
         return self._theta, self._rho
 
     def NUTS(self, theta, rho, max_height):
@@ -126,8 +122,8 @@ class StepAdapt_NUTS_Sampler(hmc.HmcSamplerBase):
          new_energy_max_subtree_right,
          new_energy_min_subtree_right) = self.evaluate_proposed_subtree(left_theta_subtree_right, left_rho_subtree_right, height - 1)
 
-        sub_u_turn = (sub_u_turn) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta_subtree_left,
-                                                                                           rho_subtree_left,
+        sub_u_turn = (sub_u_turn) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta,
+                                                                                           rho,
                                                                                            theta_subtree_right,
                                                                                            rho_subtree_right)
 

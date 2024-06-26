@@ -234,8 +234,8 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
                                                                       height - 1)
         #Obtain all the corresponding quantities over the right subtree
 
-        sub_u_turn = (sub_u_turn_subtree_left) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta_right_subtree_left,
-                                                                                          rho_right_subtree_left,
+        sub_u_turn = (sub_u_turn_subtree_left) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta,
+                                                                                          rho,
                                                                                           theta_right_subtree_right,
                                                                                           rho_right_subtree_right)
         #Evaluate subintervals and the current interval for sub-u-turns
