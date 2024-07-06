@@ -169,10 +169,10 @@ def nuts_adapt(program_path, data_path, seed):
         seed=seed,
         metric="unit_e",
         show_console=False,
-        adapt_delta=0.95,
-        chains=2,
+        adapt_delta=0.9,
+        chains=1,
         parallel_chains=2,
-        iter_warmup=20_000,
+        iter_warmup=25_000,
         iter_sampling=50_000,
         show_progress=False,
     )
@@ -411,8 +411,9 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
         )
         print(f"# unconstrained parameters = {nuts_fit.num_unc_params_}")
         for stepsize, step_scale in zip(
-            [nuts_fit.stepsize_, nuts_fit.stepsize_ / 2], ["step 1", "step 1/2"]
-        ):
+            [nuts_fit.stepsize_], # nuts_fit.stepsize_ / 2],
+                ["step 1"] # , "step 1/2"]
+                ):
             print(f"\nSTEP SIZE = {stepsize}")
             for m, seed in enumerate(seeds):
                 DRAW_INDEX = 5  # chosen arbitrarily
@@ -458,8 +459,9 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
                 )
                 df.loc[len(df)] = program_name, "NUTS", step_scale, "-", "MSJD", msjd
                 for path_frac, binom_prob_rank in zip(
-                    [0.0, 0.3, 0.5, 0.7], [".0", ".3", ".5", ".7"]
-                ):
+                        [0.0, 0.5],         # 0.3, 0.5, 0.7],
+                        [".0", ".5"]   #  ".3", ".5", ".7"]
+                        ):
                     gist_fit = gist_experiment(
                         program_path=program_path,
                         data=data_path,
@@ -528,20 +530,31 @@ def vs_nuts_plot(val_type):
     )
     plot = (
         pn.ggplot(
-            rmse_df, pn.aes(x="label", y="val", color="sampler")
+            rmse_df, pn.aes(x="label", y="val", fill="sampler")
         )  # fill='stepsize'
+        + pn.scale_fill_manual(values=["lightgray", "white"])
+
         + pn.geom_boxplot()
-        + pn.facet_wrap("~ stepsize + model", scales="free", ncol=len(model_names()))
+        + pn.facet_wrap("~ model", scales="free", ncol=len(model_names()))
         + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
         + pn.expand_limits(y=0)
+        + pn.theme_minimal()
         + pn.theme(
-            axis_text_x=pn.element_text(rotation=90, hjust=1), legend_position="none"
+            axis_text_x=pn.element_text(rotation=90, hjust=1, margin={'t':-4}),
+                      axis_text_y=pn.element_text(margin={'r':-6}),
+            panel_spacing_x=0.6,
+            panel_background=pn.element_blank(),
+            panel_grid_major=pn.element_blank(),
+            panel_grid_minor=pn.element_blank(),
+            axis_line=pn.element_line(),
+            axis_ticks=pn.element_blank(),
+            strip_text=pn.element_text(size=12),
+            legend_position="none"
         )
         + pn.labs(x="Sampler", y=val_type)
     )
-    plot.save(filename="vs_nuts_" + val_type + ".pdf", width=12, height=6)
+    plot.save(filename="vs_nuts_" + val_type + ".pdf", width=15, height=1.75)
 
-# [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
 def uniform_interval_plot(num_seeds, num_draws):
     stop_griping()
     meta_seed = 57484894
@@ -564,7 +577,7 @@ def uniform_interval_plot(num_seeds, num_draws):
                 gist_fit = gist_experiment(
                     program_path=program_path,
                     data=data_path,
-                    theta_unc=nuts_draw_array,
+                    theta_cons=nuts_draw_array,
                     stepsize=stepsize,
                     num_draws=num_draws,
                     frac=path_frac,
@@ -608,21 +621,38 @@ def uniform_interval_plot(num_seeds, num_draws):
                 ymin="lower_quantile",
                 ymax="upper_quantile",
                 group="stepsize",
-                color="factor(stepsize)",
+                linetype="factor(stepsize)",
             ),
         )
         + pn.geom_line(size=0.5)
+        + pn.scale_y_continuous(expand=(0, 0))
         + pn.scale_x_continuous(
             limits=(0, 1),
             breaks=[0, 0.25, 0.5, 0.75, 1],
-            labels=["0", "1/4", "1/2", "3/4", "1"],
+            labels=["0", "0.25", "0.5", "0.75", "1"],
+            expand=(0, 0)
         )
         + pn.coord_fixed(ratio=1)
         + pn.expand_limits(y=0)
-        + pn.labs(y="", x="Lower Bound Fraction", color="Step Size")
+        + pn.labs(y="", x="lower bound fraction", color="Step Size")
         + pn.facet_wrap("~ val_type", scales="free_y", ncol=3)
+        + pn.scale_linetype_manual(values=['solid', 'dashed'])
+        + pn.theme_minimal()
+        + pn.labs(linetype="step size") 
+        + pn.theme(
+            axis_text_x=pn.element_text(margin={'t':-4}),
+            axis_text_y=pn.element_text(margin={'r':-6}),
+            panel_spacing_x=0.75,
+            panel_spacing_y=0.5,
+            panel_background=pn.element_blank(),
+            panel_grid_major=pn.element_blank(),
+            panel_grid_minor=pn.element_blank(),
+            axis_line=pn.element_line(),
+            axis_ticks=pn.element_blank(),
+        )
     )
-    plot.save(filename="uniform_prob_steps_plot.pdf", width=8.5, height=5)
+    plot.save(filename="uniform_prob_steps_plot.pdf", width=10, height=5)
+    return plot
 
 def create_model(program_name):
     program_path = "../stan/" + program_name + ".stan"
@@ -654,29 +684,32 @@ def funnel_test():
         + pn.scale_x_continuous(limits=(-9, 9), breaks=(-9, -6, -3, 0, 3, 6, 9))
     )
     plot.show()
-    
-def learning_curve_plot():
+
+def theta_label_function(variable):
+    label_dict = {
+        "theta**2": r'$\widehat{\theta^2}$',
+        "theta": r'$\widehat{\theta}$'
+    }
+    return label_dict.get(variable, variable)
+
+def learning_curve_plot(N=1_000_000, iid=False):
     seed = 189236576
-    stepsize = 0.5
     model_bs = create_model('normal')
-    D = model.param_unc_num()
+    D = model_bs.param_unc_num()
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(size=D)
+    stepsize = 0.25
     sampler = gs.GistSampler(
         model=model_bs, stepsize=stepsize, theta=theta0, frac=0.0, rng=rng
     )
-    sampler = ms.MultinomialSampler(
-        model=model_bs, stepsize=stepsize, theta=theta0, steps=10, rng=rng
-    )
-    sampler = sas.StepAdaptSampler(
-        model=model_bs, rng=rng, integration_time=5, theta=theta0,
-        min_accept_prob=0.8
-    )
-    N = 100_000
-
-    # choose one of next two to use sampler or take uniform draws
-    draws = sampler.sample_constrained(N)
-    # draws = rng.normal(0, 1, size=(N, D))
+    if iid:
+        draws = rng.normal(0, 1, size=(N, D))
+        save_filename = 'learning_curve_iid.pdf'
+        title = 'Independent Draws'
+    else:
+        draws = sampler.sample_constrained(N)
+        save_filename = 'learning_curve_gist.pdf'
+        title = 'GIST Sampler'
 
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
@@ -708,35 +741,53 @@ def learning_curve_plot():
     )
     plot = (
         pn.ggplot(df, pn.aes(x="iteration", y="RMSE"))
-        + pn.geom_line()
-        + pn.scale_x_log10(limits=(10, N))
+        + pn.ggtitle(title)
+        + pn.scale_x_log10(limits=(10, N), expand=(0, 0))
         + pn.scale_y_log10()
         + pn.geom_segment(
             data=lines_df,
             mapping=pn.aes(x="x", y="y", xend="xend", yend="yend"),
             linetype="dotted",
+            size=1,
+            alpha=0.25
         )
-        + pn.facet_wrap("~ estimand")
+        + pn.geom_line(size=0.25)
+        + pn.facet_wrap("~ estimand", labeller=theta_label_function)
+        + pn.theme_minimal()
+        + pn.theme(
+            axis_text_x=pn.element_text(margin={'t':-4}),
+            axis_text_y=pn.element_text(margin={'r':-6}),
+            panel_spacing_x=0.75,
+            panel_spacing_y=0.5,
+            panel_background=pn.element_blank(),
+            panel_grid_major=pn.element_blank(),
+            panel_grid_minor=pn.element_blank(),
+            axis_line=pn.element_line(),
+            axis_ticks=pn.element_blank(),
+        )
+
     )
-    plot.save(filename="learning_curve.pdf", width=6, height=3)
+    plot.save(filename=save_filename, width=5.25, height=2)
+    return plot
+
+### PLOTS FOR PAPER ###
+
+### Learning Curve Validation
+# plot_learn_iid = learning_curve_plot(1_000_000, iid=True)
+# plot_learn_gist = learning_curve_plot(1_000_000, iid=False)
+
+### Performanc vs. Step Size and Lower Bound Fraction
+# plot_lbf = uniform_interval_plot(num_seeds = 500, num_draws=100)
 
 
-### MAIN ###
-
-# Generate plots for paper
-
-# funnel_test()
-# learning_curve_plot()
-# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
+### Comparison vs. NUTS
+all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 32484894)
 for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
     vs_nuts_plot(val_type)
-# uniform_interval_plot(num_seeds = 200, num_draws=100)
-# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 57484894)
-# for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-#     vs_nuts_plot(val_type)
 
-# Ongoing experimentation
 
+### Ongoing experimentation
+# funnel_test()
 # gist_spectral_step_eval('funnel', 25384736)
 # gist_spectral_step_eval('corr-normal', 25384736)
 # gist_spectral_step_eval('normal', 25384736)
