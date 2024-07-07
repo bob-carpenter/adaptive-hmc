@@ -519,41 +519,41 @@ def all_vs_nuts(num_seeds, num_draws, meta_seed):
     agg_df.to_csv("all-vs-nuts-agg.csv", index=False)
 
 
-def vs_nuts_plot(val_type):
-    df = pd.read_csv("all-vs-nuts.csv")
-    rmse_df = df[df["val_type"] == val_type]
-    rmse_df["label"] = rmse_df.apply(
-        lambda x: "NUTS" if x["sampler"] == "NUTS" else f"GIST{x['binom_prob']}", axis=1
-    )
-    rmse_df["fill"] = rmse_df["sampler"].apply(
-        lambda x: "lightgrey" if x == "NUTS" else "white"
-    )
-    plot = (
-        pn.ggplot(
-            rmse_df, pn.aes(x="label", y="val", fill="sampler")
-        )  # fill='stepsize'
-        + pn.scale_fill_manual(values=["lightgray", "white"])
-
-        + pn.geom_boxplot()
-        + pn.facet_wrap("~ model", scales="free", ncol=len(model_names()))
-        + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
-        + pn.expand_limits(y=0)
-        + pn.theme_minimal()
-        + pn.theme(
-            axis_text_x=pn.element_text(rotation=90, hjust=1, margin={'t':-4}),
-                      axis_text_y=pn.element_text(margin={'r':-6}),
-            panel_spacing_x=0.6,
-            panel_background=pn.element_blank(),
-            panel_grid_major=pn.element_blank(),
-            panel_grid_minor=pn.element_blank(),
-            axis_line=pn.element_line(),
-            axis_ticks=pn.element_blank(),
-            strip_text=pn.element_text(size=12),
-            legend_position="none"
-        )
-        + pn.labs(x="Sampler", y=val_type)
-    )
-    plot.save(filename="vs_nuts_" + val_type + ".pdf", width=15, height=1.75)
+def vs_nuts_plot():
+    for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
+        df = pd.read_csv("all-vs-nuts.csv")
+        rmse_df = df[df["val_type"] == val_type]
+        rmse_df["label"] = rmse_df.apply(
+            lambda x: "NUTS" if x["sampler"] == "NUTS" else f"GIST{x['binom_prob']}", axis=1
+            )
+        rmse_df["fill"] = rmse_df["sampler"].apply(
+            lambda x: "lightgrey" if x == "NUTS" else "white"
+            )
+        plot = (
+            pn.ggplot(
+                rmse_df, pn.aes(x="label", y="val", fill="sampler")
+                )  # fill='stepsize'
+            + pn.scale_fill_manual(values=["lightgray", "white"])
+            + pn.geom_boxplot()
+            + pn.facet_wrap("~ model", scales="free", ncol=len(model_names()))
+            + pn.scale_y_continuous(expand=(0, 0, 0.05, 0))
+            + pn.expand_limits(y=0)
+            + pn.theme_minimal()
+            + pn.theme(
+                axis_text_x=pn.element_text(rotation=90, hjust=1, margin={'t':-4}),
+                axis_text_y=pn.element_text(margin={'r':-6}),
+                panel_spacing_x=0.6,
+                panel_background=pn.element_blank(),
+                panel_grid_major=pn.element_blank(),
+                panel_grid_minor=pn.element_blank(),
+                axis_line=pn.element_line(),
+                axis_ticks=pn.element_blank(),
+                strip_text=pn.element_text(size=12),
+                legend_position="none"
+                )
+            + pn.labs(x="Sampler", y=val_type)
+            )
+        plot.save(filename="vs_nuts_" + val_type + ".pdf", width=15, height=1.75)
 
 def uniform_interval_plot(num_seeds, num_draws):
     stop_griping()
@@ -781,9 +781,8 @@ def learning_curve_plot(N=1_000_000, iid=False):
 
 
 ### Comparison vs. NUTS
-all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 32484894)
-for val_type in ['RMSE (param)', 'RMSE (param sq)', 'MSJD', 'Leapfrog Steps']:
-    vs_nuts_plot(val_type)
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 32484894)
+vs_nuts_plot()
 
 
 ### Ongoing experimentation
