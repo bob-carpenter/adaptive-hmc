@@ -3,6 +3,7 @@ import numpy as np
 
 class MultinomialSampler(hmc.HmcSamplerBase):
     def __init__(self, model, rng, stepsize, steps, theta):
+        print("MULTINOMIAL SAMPLER CONSTRUCTION")
         super().__init__(model, stepsize, rng)
         self._steps = steps
         self._theta = theta
