@@ -1,4 +1,4 @@
-import gist_multinomial_sampler as gs
+import gist_sampler as gs
 import multinomial_sampler as ms
 import stepsize_adapt_sampler as sas
 import gist_spectral_step_sampler as gws
@@ -698,7 +698,7 @@ def learning_curve_plot(N=1_000_000, iid=False):
     D = model_bs.param_unc_num()
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(size=D)
-    stepsize = 0.25
+    stepsize = 0.5
     sampler = gs.GistSampler(
         model=model_bs, stepsize=stepsize, theta=theta0, frac=0.0, rng=rng
     )
@@ -774,14 +774,14 @@ def learning_curve_plot(N=1_000_000, iid=False):
 
 ### Learning Curve Validation
 # plot_learn_iid = learning_curve_plot(1_000_000, iid=True)
-plot_learn_gist = learning_curve_plot(1_000_000, iid=False)
+# plot_learn_gist = learning_curve_plot(100_000, iid=False)
 
 ### Performance vs. Step Size and Lower Bound Fraction
 # plot_lbf = uniform_interval_plot(num_seeds = 500, num_draws=100)
 
 
 ### Comparison vs. NUTS
-# all_vs_nuts(num_seeds = 10, num_draws = 100, meta_seed = 32484894)
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 32484894)
 # vs_nuts_plot()
 
 

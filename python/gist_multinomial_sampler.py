@@ -17,7 +17,8 @@ class GistSampler(hmc.HmcSamplerBase):
 
     def uturn(self, theta, rho):
         log_joint_theta_rho = self.log_joint(theta, rho)
-        lps = [log_joint_theta_rho]  # include initial lp
+        # lps = [-100_000]
+        lps = [-100_000 + log_joint_theta_rho]  # include initial lp, but avoid trying it
         theta_next = theta
         rho_next = rho
         old_distance = 0
@@ -31,7 +32,7 @@ class GistSampler(hmc.HmcSamplerBase):
             if distance <= old_distance:
                 return n + 1, lps
             old_distance = distance
-            lps.append(log_joint_next)  # include if didn't U-turn or diverge
+            lps.append(np.log(distance) + log_joint_next)  # include if didn't U-turn or diverge
         return self._max_leapfrog_steps, lps
 
     def draw(self):
@@ -58,6 +59,6 @@ class GistSampler(hmc.HmcSamplerBase):
                 self._theta = theta_star
                 self._rho = rho_star
         except Exception as e:
-            # traceback.print_exc()
+            traceback.print_exc()
             self._divergences += 1
         return self._theta, self._rho
