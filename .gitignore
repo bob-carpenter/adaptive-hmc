@@ -180,3 +180,4 @@ stan/normal-mixture
 stan/normal
 stan/pkpd
 stan/prophet
+stan/rosenbrock
