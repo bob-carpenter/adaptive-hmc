@@ -1,5 +1,5 @@
 import numpy as np
-
+import traceback
 
 class HmcSamplerBase:
     def __init__(self, model, stepsize, rng):
@@ -20,6 +20,7 @@ class HmcSamplerBase:
         try:
             return self.draw()
         except Exception as e:
+            traceback.print_exc()
             print(f"EXCEPTION: {e}")
             self._theta, self._rho = theta, rho
             return self._theta, self._rho
