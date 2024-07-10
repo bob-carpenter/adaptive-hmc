@@ -1,7 +1,5 @@
 import numpy as np
 import hmc
-
-
 # Current status: Changing the adapt step size to also return the number of steps
 # used over the fine grid AFTER the random multiplier.
 
@@ -43,7 +41,7 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
                                                           self._max_step_size,
                                                           )
         coarse_interval_current.generate_num_apogees_and_shift(self._apogee_selection_parameter)
-        #print(f"Initial shift: {coarse_interval_current.get_shift()}")
+        # print(f"Initial shift: {coarse_interval_current.get_shift()}")
         coarse_interval_current.populate_interval()
         # This is the logic for generating the coarse level interval
 
@@ -68,15 +66,20 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
         self._step_size_non_overlap_rejects += (1 - accept_step_size)
         ratio_norm_fact = (fine_interval_current.normalization_factor()
                            / fine_interval_proposal.normalization_factor())
-        print(f"Current normalization factor: {fine_interval_current.normalization_factor()}")
-        print(f"Proposal normalization factor: {fine_interval_proposal.normalization_factor()}")
-        print(f"Ratio of normalization factors: {ratio_norm_fact}")
+        boltzmann_ratio = np.exp(-fine_interval_proposal.initial_energy() + fine_interval_current.initial_energy())
+        accept_index_selection = fine_interval_proposal.accept_index_selection(fine_interval_current)
+        # print(f"Current normalization factor: {fine_interval_current.normalization_factor()}")
+        # print(f"Proposal normalization factor: {fine_interval_proposal.normalization_factor()}")
+        # print(f"Ratio of normalization factors: {ratio_norm_fact}")
+        # print(f"Boltzmann ratio: {boltzmann_ratio}")
+        # print(f"Acceptance index selection: {accept_index_selection}")
+        # print(f"Accept step size: {accept_step_size}")
+        # print(f"Acceptance probability: {accept_step_size * ratio_norm_fact * accept_index_selection * boltzmann_ratio}")
         # We should have the normalization factor for the current interval on top
         # since it is in the basement of the Boltzmann probability.
 
-        accept_index_selection = fine_interval_proposal.accept_index_selection(fine_interval_current)
         self._no_return_rejects += (1 - accept_index_selection)
-        acceptance_probability = accept_step_size * ratio_norm_fact * accept_index_selection
+        acceptance_probability = accept_step_size * ratio_norm_fact * accept_index_selection * boltzmann_ratio
         #print(f"Number of apogees proposal: {coarse_interval_proposal.get_number_apogees()}")
         #print(f"Shift proposal: {coarse_interval_proposal.get_shift()}")
         if self._rng.uniform() < acceptance_probability:
@@ -136,6 +139,8 @@ class CoarseLevelIntervalAAPS:
         self._rho = rho
         self._energy_max = -self._sampler.log_joint(self._theta, self._rho)
         self._energy_min = self._energy_max
+        self._initial_energy = self._energy_max
+        self._total_weight = 1
 
         self._number_apogees = None
         self._shift = None
@@ -143,7 +148,7 @@ class CoarseLevelIntervalAAPS:
         # print(f"Number of apogees: {self._number_apogees}")
         self._depth = 0
         self._stepsize = stepsize
-        self._total_weight = np.exp(self._sampler.log_joint(self._theta, self._rho))
+
         self._iterate_num_segments_left = []
         self._iterate_num_segments_right = []
         self._number_left = 0
@@ -179,7 +184,7 @@ class CoarseLevelIntervalAAPS:
         # This function implements finding the endpoint in the Apogee to
         # Apogee interval. In principle this should not differ too much for other
         # similar conditions
-        if self._number_apogees == None or self._shift == None:
+        if self._number_apogees is None or self._shift is None:
             raise ValueError("The number of apogees or the shift has not been set at the coarse level")
         self._iterate_num_segments_right = self.iterate_over_single_side_coarse(1, self._number_apogees - self._shift)
         #print("\n \n \n Done with right side \n \n \n")
@@ -223,12 +228,12 @@ class CoarseLevelIntervalAAPS:
             current_rho = next_rho
             current_sign = next_sign
             current_iterate_index += 1
-            current_weight = np.exp(-self._sampler.log_joint(current_theta, current_rho))
             current_energy = -self._sampler.log_joint(current_theta, current_rho)
+            current_weight = np.exp(-(current_energy - self._initial_energy))
             self._energy_max = max(self._energy_max, current_energy)
             self._energy_min = min(self._energy_min, current_energy)
 
-            if current_weight / self._total_weight < self._rng.uniform():
+            if self._rng.uniform() < current_weight / self._total_weight:
                 self._sample_theta = current_theta
                 self._sample_rho = current_rho
                 self._sample_coarse_grid_segment_index = direction * number_changes_seen
@@ -258,22 +263,21 @@ class CoarseLevelIntervalAAPS:
 
     def proposal_shift(self):
         return self._shift + self._sample_coarse_grid_segment_index
-
     def step_size_acceptance(self, intial_fine_grid):
         return int(abs(self._depth - intial_fine_grid._depth) <= 1)
 
     def normalization_factor(self):
         return self._total_weight
-
     def sample_index(self):
         return self._sample_index
-
     def accept_index_selection(self, initial_fine_grid):
         proposal_index = -initial_fine_grid._sample_index
         number_left = -self._iterate_num_segments_left[-1]
         number_right = self._iterate_num_segments_right[-1]
         return int((proposal_index <= number_right) and (proposal_index >= number_left))
 
+    def initial_energy(self):
+        return self._initial_energy
 
 class FineLevelIntervalAAPS:
     def __init__(self, sampler, rng, theta, rho, coarse_grid, depth):
@@ -287,7 +291,9 @@ class FineLevelIntervalAAPS:
         self._number_fine_grid_leapfrog_steps = 2 ** self._depth
         self._max_energy = -self._sampler.log_joint(self._theta, self._rho)
         self._min_energy = self._max_energy
-        self._total_weight = np.exp(self._sampler.log_joint(self._theta, self._rho))
+        self._initial_energy = self._max_energy
+        self._total_weight = 1
+
         self._sample_theta = theta
         self._sample_rho = rho
         self._sample_coarse_grid_segment_index = 0
@@ -309,7 +315,9 @@ class FineLevelIntervalAAPS:
         current_rho = self._rho
         current_iterate_index = 0
         current_energy = -self._sampler.log_joint(current_theta, current_rho)
-        current_weight = np.exp(-current_energy)
+        current_weight = np.exp(-(current_energy - self._initial_energy))
+        #This is some wasted computation, but I'm keeping it for
+        #conceptual clarity
 
         self._max_energy = max(self._max_energy, current_energy)
         self._min_energy = min(self._min_energy, current_energy)
@@ -321,13 +329,13 @@ class FineLevelIntervalAAPS:
                                                                                         direction * current_rho)
                 current_rho = direction * current_rho
                 current_energy = -self._sampler.log_joint(current_theta, current_rho)
-                current_weight = np.exp(-current_energy)
+                current_weight = np.exp(-(current_energy - self._initial_energy))
                 current_iterate_index += 1
-                print(f"Current weight: {current_weight}")
-                print(f"Total weight: {self._total_weight}")
+                #print(f"Current weight: {current_weight}")
+                #print(f"Total weight: {self._total_weight}")
                 #print(f"Current index: {index}")
                 #print(f"Current segment index: {segment_index}")
-                if current_weight / self._total_weight < self._rng.uniform():
+                if self._rng.uniform() < current_weight / self._total_weight:
                     self._sample_theta = current_theta
                     self._sample_rho = current_rho
                     self._sample_coarse_grid_segment_index = direction * segment_index
@@ -378,12 +386,15 @@ class FineLevelIntervalAAPS:
         proposal_index = -initial_fine_grid.sample_index()
         number_left = -self._iterate_num_segments_left[-1]
         number_right = self._iterate_num_segments_right[-1]
-        #print(f"Proposal index: {proposal_index}")
-        #print(f"Left side inital fine grid: {initial_fine_grid._iterate_num_segments_left}")
-        #print(f"Right side initial fine grid: {initial_fine_grid._iterate_num_segments_right}")
-        #print(f"Proposal segment index: {initial_fine_grid._sample_coarse_grid_segment_index}")
-        #print(f"Number left: {number_left}")
-        #print(f"Number right: {number_right}")
+        # print(f"Proposal index: {proposal_index}")
+        # print(f"Left side inital fine grid: {initial_fine_grid._iterate_num_segments_left}")
+        # print(f"Right side initial fine grid: {initial_fine_grid._iterate_num_segments_right}")
+        # print(f"Proposal segment index: {initial_fine_grid._sample_coarse_grid_segment_index}")
+        # print(f"Number left: {number_left}")
+        # print(f"Number right: {number_right}")
 
         # We're testing whether or not the original point is reachable from the proposal
         return int((proposal_index <= number_right) and (proposal_index >= number_left))
+
+    def initial_energy(self):
+        return self._initial_energy

@@ -3,7 +3,7 @@ import numpy as np
 import scipy as sp
 import traceback
 
-#This file contains many comments at Nawaf's request
+
 class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
     def __init__(self,
                  model,
@@ -172,7 +172,6 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
 
         return sample_theta, sample_rho, energy_max, energy_min
         #Return the state if we've hit the maximum size -regardless of everything else
-
 
     def evaluate_proposed_subtree(self, theta, rho, height):
         # -> (right_theta, right_rho, sample_theta, sample_rho, weight, sub_u_turn, energy_max, energy_min)
