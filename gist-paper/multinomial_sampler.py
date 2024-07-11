@@ -1,6 +1,7 @@
 import hmc
 import numpy as np
 
+
 class MultinomialSampler(hmc.HmcSamplerBase):
     def __init__(self, model, rng, stepsize, steps, theta):
         print("MULTINOMIAL SAMPLER CONSTRUCTION")
@@ -11,7 +12,7 @@ class MultinomialSampler(hmc.HmcSamplerBase):
     def draw(self):
         N = self._steps
         F = self._rng.integers(0, N)
-        self._rho =  self._rng.normal(size=self._model.param_unc_num())
+        self._rho = self._rng.normal(size=self._model.param_unc_num())
         theta, rho = self._theta, self._rho
         theta_star, rho_star = theta, rho
         lp = self.log_joint(theta, rho)

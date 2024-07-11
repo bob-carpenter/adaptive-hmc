@@ -3,10 +3,11 @@ import numpy as np
 import hmc
 import traceback
 
+
 class GistSampler(hmc.HmcSamplerBase):
     def __init__(self, model, stepsize, theta, rng, frac, max_leapfrog=1024):
         super().__init__(model, stepsize, rng)
-        self._frac = -1 # n/a here but didn't want to change interface
+        self._frac = -1  # n/a here but didn't want to change interface
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
@@ -18,7 +19,9 @@ class GistSampler(hmc.HmcSamplerBase):
     def uturn(self, theta, rho):
         log_joint_theta_rho = self.log_joint(theta, rho)
         # lps = [-100_000]
-        lps = [-100_000 + log_joint_theta_rho]  # include initial lp, but avoid trying it
+        lps = [
+            -100_000 + log_joint_theta_rho
+        ]  # include initial lp, but avoid trying it
         theta_next = theta
         rho_next = rho
         old_distance = 0
@@ -32,7 +35,9 @@ class GistSampler(hmc.HmcSamplerBase):
             if distance <= old_distance:
                 return n + 1, lps
             old_distance = distance
-            lps.append(np.log(distance) + log_joint_next)  # include if didn't U-turn or diverge
+            lps.append(
+                np.log(distance) + log_joint_next
+            )  # include if didn't U-turn or diverge
         return self._max_leapfrog_steps, lps
 
     def draw(self):
@@ -44,7 +49,7 @@ class GistSampler(hmc.HmcSamplerBase):
             L, lps = self.uturn(theta, rho)
             logsumexp_lps = sp.special.logsumexp(lps)
             probs = sp.special.softmax(lps)
-            N = np.random.choice(len(probs), p = probs)
+            N = np.random.choice(len(probs), p=probs)
             theta_star, rho_star = self.leapfrog(theta, rho, N)
             rho_star = -rho_star
             Lstar, lps_star = self.uturn(theta_star, rho_star)

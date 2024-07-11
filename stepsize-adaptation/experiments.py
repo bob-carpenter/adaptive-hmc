@@ -1,4 +1,7 @@
 import gist_sampler as gs
+import stepsize_adapt_sampler as sas
+import gist_spectral_step_sampler as gws
+import progressive_turnaround as pta
 import cmdstanpy as csp
 import numpy as np
 import scipy as sp
@@ -69,11 +72,63 @@ def stop_griping():
     csp.utils.get_logger().setLevel(logging.ERROR)
 
 
+def flatten_dict_values(data_dict):
+    """Return an aray of entries in the dictionary concatenated together."""
+    flattened_list = []
+    for value in data_dict.values():
+        if isinstance(value, (np.ndarray)):
+            flattened_list.extend(value.flatten())
+        elif isinstance(value, (list, tuple)):
+            flattened_list.extend(value)
+        else:
+            flattened_list.append(value)
+    print(flattened_list)
+    return np.array(flattened_list)
+
+
 def sq_jumps(draws):
     """Return an array of squared distances between consecutive draws."""
     M = np.shape(draws)[0]
     jumps = draws[range(1, M), :] - draws[range(0, M - 1), :]
     return [np.dot(jump, jump) for jump in jumps]
+
+
+def traceplot(chain):
+    """Return a traceplot for the specified single chain."""
+    df = pd.DataFrame({"m": range(len(chain)), "theta": chain})
+    plot = (
+        pn.ggplot(df, pn.aes(x="m", y="theta"))
+        + pn.geom_line()
+        + pn.labs(x="Iteration", y="Parameter Value", title="Trace Plot of MCMC Chain")
+        + pn.theme_minimal()
+    )
+    return plot
+
+
+def histogram(xs):
+    """Return a histogram plot of the specified values with a vertical blue line at the mean."""
+    df = pd.DataFrame({"x": xs})
+    plot = (
+        pn.ggplot(df, pn.aes(x="x"))
+        + pn.geom_histogram(bins=100)
+        + pn.geom_vline(xintercept=np.mean(xs), color="blue", size=1)
+    )
+    return plot
+
+
+def histogram_vs_normal_density(xs):
+    """Return a histogram plot of the specified value with a blue overlay of a standard normal density."""
+    df = pd.DataFrame({"x": xs})
+    plot = (
+        pn.ggplot(df, pn.aes(x="x"))
+        + pn.geom_histogram(
+            pn.aes(y="..density.."), bins=50, color="black", fill="white"
+        )
+        + pn.stat_function(
+            fun=sp.stats.norm.pdf, args={"loc": 0, "scale": 1}, color="blue", size=1
+        )
+    )
+    return plot
 
 
 def num_rejects(draws):
@@ -84,6 +139,16 @@ def num_rejects(draws):
         if (draws[m, :] == draws[m + 1, :]).all():
             rejects += 1
     return rejects, rejects / num_draws
+
+
+def constrain(model, draws):
+    """Return the constrained draws corresponding the specified draws using the specified model for the transform."""
+    num_draws = np.shape(draws)[0]
+    D = model.param_unc_num()
+    draws_constr = np.empty((num_draws, D))
+    for m in range(num_draws):
+        draws_constr[m, :] = model.param_constrain(draws[m, :])
+    return draws_constr
 
 
 def metadata_columns(fit):
@@ -241,6 +306,15 @@ def gist_experiment(
     )
     return gist_fit
 
+    # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
+    # print(f"Mean(param^2): {np.mean(constrained_draws**2, axis=0)}")
+    # scalar_draws_for_traceplot = constrained_draws[: , 0]
+    # print(traceplot(scalar_draws_for_traceplot))
+    # print(histogram(sq_jumps(draws)))
+    # print("(Forward steps to U-turn from initial, Backward steps to U-turn from proposal)")
+    # for n in range(10):
+    #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
+
 
 def model_names():
     """Return the file names of the models to evaluate."""
@@ -253,7 +327,6 @@ def model_names():
         "hmm",
         "garch",
         "lotka-volterra"
-        # following models fit, but not included in paper
         # 'irt-2pl',
         # 'eight-schools',
         # 'normal-mixture',
@@ -263,6 +336,65 @@ def model_names():
         # 'covid19-impperial-v2',
         # 'pkpd',
     ]
+
+
+def progressive_experiment(
+    program_path, data, theta_unc, stepsize, num_draws, theta_hat, theta_sq_hat, seed
+):
+    model_bs = bs.StanM
+    odel(model_lib=program_path, data=data, capture_stan_prints=False)
+    rng = np.random.default_rng(seed)
+    theta = model_bs.param_unconstrain(theta_unc)
+    sampler = pta.ProgressiveTurnaroundSampler(
+        model=model_bs, stepsize=stepsize, theta=theta, rng=rng
+    )
+    constrained_draws = sampler.sample_constrained(num_draws)
+    rejects, prop_rejects = num_rejects(constrained_draws)
+    prop_no_return = sampler._cannot_get_back_rejects / num_draws
+    prop_diverge = sampler._divergences / num_draws
+    msjd = np.mean(sq_jumps(constrained_draws))
+    theta_hat_gist = constrained_draws.mean(axis=0)
+    theta_sq_hat_gist = (constrained_draws**2).mean(axis=0)
+    rmse = root_mean_square_error(theta_hat, theta_hat_gist)
+    rmse_sq = root_mean_square_error(theta_sq_hat, theta_sq_hat_gist)
+    print(
+        f"PrAHMC: MSJD={msjd:8.3f};  leapfrog_steps={sampler._gradient_evals}  reject={prop_rejects:4.2f};  no return={prop_no_return:4.2f};  diverge={prop_diverge:4.2f};  RMSE(theta)={rmse:8.4f};  RMSE(theta**2)={rmse_sq:8.4f}"
+    )
+    # print(f"Mean(param): {np.mean(constrained_draws, axis=0)}")
+    v = np.mean(constrained_draws**2, axis=0)
+    # print(f"Mean(param^2): {v}")
+    print(f"Mean(var > 1): {np.mean(v > 1)}")
+    # scalar_draws_for_traceplot = constrained_draws[: , 0]
+    # print(traceplot(scalar_draws_for_traceplot))
+    # print(histogram(sq_jumps(draws)))
+    # print("(Forward steps to U-turn from initial, Backward steps to U-turn from proposal)")
+    # for n in range(10):
+    #   print(f"  ({sampler._fwds[n]:3d},  {sampler._bks[n]:3d})")
+
+
+def gist_spectral_step_eval(program_name, seed):
+    program_path = "../stan/" + program_name + ".stan"
+    data_path = "../stan/" + program_name + ".json"
+    model = bs.StanModel(model_lib=program_path, data=data_path)
+    rng = np.random.default_rng(seed)
+    D = model.param_unc_num()
+    theta0 = rng.normal(loc=0, scale=1, size=D)  # random init
+    sampler = gws.GistSpectralStepSampler(
+        model=model, theta=theta0, rng=rng, lb_frac=0.5
+    )
+    num_draws = 10_000
+    sample = sampler.sample_constrained(num_draws)
+    burned_in_sample = sample[range(num_draws // 2, num_draws), :]
+    theta_hat = burned_in_sample.mean(axis=0)
+    sd_theta_hat = burned_in_sample.std(axis=0)
+    quant05_theta_hat = np.percentile(burned_in_sample, 5, axis=0)
+    quant95_theta_hat = np.percentile(burned_in_sample, 95, axis=0)
+    rejects, prop_rejects = num_rejects(sample)
+    print(f"mean = {theta_hat}")
+    print(f"sd = {sd_theta_hat}")
+    print(f"05% quantile: {quant05_theta_hat}")
+    print(f"95% quantile: {quant95_theta_hat}")
+    print(f"% rejection: {prop_rejects}")
 
 
 def all_vs_nuts(num_seeds, num_draws, meta_seed):
@@ -534,6 +666,33 @@ def create_model(program_name):
     return model_bs
 
 
+def funnel_test():
+    # accept 0.6, N = 10_000, time=10; 0.6, 10_000, 20
+    seed = 3946456389
+    model = create_model("funnel")
+    D = model.param_unc_num()
+    rng = np.random.default_rng(seed)
+    theta0 = np.zeros(D)
+    theta0[0] = rng.normal(scale=3)
+    theta0[1:D] = rng.normal(scale=np.exp(theta0[0] / 2), size=(D - 1))
+    sampler = sas.StepAdaptSampler(
+        model=model, rng=rng, integration_time=25, theta=theta0, min_accept_prob=0.6
+    )
+    N = 100_000
+    draws = sampler.sample_constrained(N)
+    x = draws[:, 0]
+    x_df = pd.DataFrame({"log sigma": x})
+    plot = (
+        pn.ggplot(mapping=pn.aes(x="log sigma"), data=x_df)
+        + pn.geom_histogram(
+            pn.aes(y="..density..", x="log sigma"), bins=31, color="black", fill="white"
+        )
+        + pn.stat_function(fun=lambda x: sp.stats.norm.pdf(x, 0, 3), color="red")
+        + pn.scale_x_continuous(limits=(-9, 9), breaks=(-9, -6, -3, 0, 3, 6, 9))
+    )
+    plot.show()
+
+
 def theta_label_function(variable):
     label_dict = {"theta**2": r"$\widehat{\theta^2}$", "theta": r"$\widehat{\theta}$"}
     return label_dict.get(variable, variable)
@@ -615,13 +774,23 @@ def learning_curve_plot(N=1_000_000, iid=False):
     return plot
 
 
-### Learning curve validation plots
-plot_learn_iid = learning_curve_plot(1_000_000, iid=True)
-plot_learn_gist = learning_curve_plot(100_000, iid=False)
+### PLOTS FOR PAPER ###
 
-### Performance vs. step size and lower bound fraction plots
-plot_lbf = uniform_interval_plot(num_seeds=500, num_draws=100)
+### Learning Curve Validation
+# plot_learn_iid = learning_curve_plot(1_000_000, iid=True)
+# plot_learn_gist = learning_curve_plot(100_000, iid=False)
 
-### Comparison vs. NUTS plots
-all_vs_nuts(num_seeds=200, num_draws=100, meta_seed=32484894)
-vs_nuts_plot()
+### Performance vs. Step Size and Lower Bound Fraction
+# plot_lbf = uniform_interval_plot(num_seeds = 500, num_draws=100)
+
+
+### Comparison vs. NUTS
+# all_vs_nuts(num_seeds = 200, num_draws = 100, meta_seed = 32484894)
+# vs_nuts_plot()
+
+
+### Ongoing experimentation
+# funnel_test()
+# gist_spectral_step_eval('funnel', 25384736)
+# gist_spectral_step_eval('corr-normal', 25384736)
+# gist_spectral_step_eval('normal', 25384736)

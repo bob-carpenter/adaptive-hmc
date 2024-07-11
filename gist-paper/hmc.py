@@ -1,6 +1,7 @@
 import numpy as np
 import traceback
 
+
 class HmcSamplerBase:
     def __init__(self, model, stepsize, rng):
         self._model = model
@@ -24,7 +25,7 @@ class HmcSamplerBase:
             print(f"EXCEPTION: {e}")
             self._theta, self._rho = theta, rho
             return self._theta, self._rho
-    
+
     def leapfrog_step(self, theta, rho):
         _, grad = self._model.log_density_gradient(theta)
         rho2 = rho + 0.5 * self._stepsize * grad
@@ -40,7 +41,7 @@ class HmcSamplerBase:
 
     def log_joint(self, theta, rho):
         try:
-            return self._model.log_density(theta) - 0.5 * sum(rho ** 2)
+            return self._model.log_density(theta) - 0.5 * sum(rho**2)
         except ExceptionType as e:
             return np.NINF
 
