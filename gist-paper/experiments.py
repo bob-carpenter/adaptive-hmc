@@ -1,5 +1,4 @@
 import gist_sampler as gs
-import multinomial_sampler as ms
 import stepsize_adapt_sampler as sas
 import gist_spectral_step_sampler as gws
 import progressive_turnaround as pta
