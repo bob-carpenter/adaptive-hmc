@@ -9,22 +9,24 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
                  model,
                  rng,
                  theta,
+                 rho,
                  min_accept_prob,
-                 max_step_size,
-                 max_step_size_search_depth,
+                 max_stepsize,
+                 max_stepsize_search_depth,
                  max_nuts_depth):
 
         super().__init__(model, 0.0, rng)
         self._theta = theta
+        self._rho = rho
         self._log_min_accept_prob = np.log(min_accept_prob)
-        self._max_step_size= max_step_size
-        self._max_step_size_search_depth = max_step_size_search_depth
+        self._max_stepsize= max_stepsize
+        self._max_stepsize_search_depth = max_stepsize_search_depth
         self._number_fine_grid_leapfrog_steps = 1
         self._max_nuts_search_depth = max_nuts_depth
         self._bernoulli_sequence = self._rng.integers(low = 0, high = 2, size = self._max_nuts_search_depth)
 
     def draw(self):
-        self._stepsize = self._max_step_size
+        self._stepsize = self._max_stepsize
         self._number_fine_grid_leapfrog_steps = 1
         self._bernoulli_sequence = self._rng.integers(low=0, high=2, size=self._max_nuts_search_depth)
         #Reset the step_size, the number of leapfrog steps, and the entire sequence of Bernoulli draws
@@ -33,7 +35,7 @@ class StepadaptNutsCoarseFineSampler(hmc.HmcSamplerBase):
         theta, rho = self._theta, self._rho
         #Redraw the momentum, set theta, rho to the current state
 
-        for i in range(self._max_step_size_search_depth):
+        for i in range(self._max_stepsize_search_depth):
             try:
                 #Begin searching the step_size refinement process
                 (theta_prime,

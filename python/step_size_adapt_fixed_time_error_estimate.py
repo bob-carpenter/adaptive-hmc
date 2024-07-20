@@ -12,16 +12,16 @@ class NUTS_local_adapt(vn.VanillaNUTS):
                  rho,
                  min_acceptance_probability,
                  energy_estimate_steps,
-                 max_step_size,
-                 max_step_size_search_depth,
+                 max_stepsize,
+                 max_stepsize_search_depth,
                  max_nuts_depth
                  ):
         super().__init__(model, rng, theta, rho, 0, max_nuts_depth)
         self._energy_gap_bound = -np.log(min_acceptance_probability)
         self._energy_estimate_steps = energy_estimate_steps
 
-        self._max_step_size_search_depth = max_step_size_search_depth
-        self._max_step_size = max_step_size
+        self._max_stepsize_search_depth = max_stepsize_search_depth
+        self._max_stepsize = max_stepsize
         self._acceptance_ratios = []
 
     def draw(self):
@@ -30,10 +30,8 @@ class NUTS_local_adapt(vn.VanillaNUTS):
 
         current_position_adapted_step_size = self.adapt_step_size(theta, rho)
         self._stepsize = current_position_adapted_step_size.proposal_step_size()
-        theta_prime, rho_prime, energy_max, energy_min = self.NUTS(theta, rho, self._max_nuts_search_depth)
-            #We have now generated the proposal
-            #I dont need the energy max and min, so maybe at some point I take that out
-            #For right now, I will just return the theta and rho
+        nuts_orbit = self.NUTS(theta, rho, self._max_nuts_search_depth)
+        theta_prime, rho_prime = nuts_orbit.sample_coordinates()
         proposal_position_adapted_step_size = self.adapt_step_size(theta_prime, rho_prime)
         acceptance_probability = self.compute_acceptance_probability(current_position_adapted_step_size,
                                                                      proposal_position_adapted_step_size)
@@ -50,7 +48,7 @@ class NUTS_local_adapt(vn.VanillaNUTS):
         return self._energy_estimate_steps
 
     def max_step_size(self):
-        return self._max_step_size
+        return self._max_stepsize
     def max_step_size_search_depth(self):
         return self._energy_estimate_steps
 

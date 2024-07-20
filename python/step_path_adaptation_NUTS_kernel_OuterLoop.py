@@ -7,20 +7,22 @@ class StepAdapt_NUTS_Sampler(hmc.HmcSamplerBase):
                  model,
                  rng,
                  theta,
+                 rho,
                  min_accept_prob,
-                 max_step_size,
+                 max_stepsize,
                  max_step_size_search_depth,
                  max_nuts_depth):
 
         super().__init__(model, 0.0, rng)
         self._theta = theta
+        self._rho = rho
         self._log_min_accept_prob = np.log(min_accept_prob)
-        self._max_step_size= max_step_size
+        self._max_stepsize= max_stepsize
         self._max_step_size_search_depth = max_step_size_search_depth
         self._max_nuts_search_depth = max_nuts_depth
 
     def draw(self):
-        self._stepsize = self._max_step_size
+        self._stepsize = self._max_stepsize
         self._rho = self._rng.normal(size=self._model.param_unc_num())
         theta, rho = self._theta, self._rho
         for i in range(self._max_step_size_search_depth):
