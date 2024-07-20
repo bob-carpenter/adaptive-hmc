@@ -1,12 +1,14 @@
 import os
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
 import matplotlib.pyplot as plt
-# import step_size_adap_NUTS_b_prim_transform_no_adjust as nuts_b_prime_transform_no_adjust
 import numpy as np
 
-import Fixed_step_size_NUTS_simulation as fn
-import step_size_adapt_NUTS_b_prime_transform as nuts_b_prime_transform
-
+import histogram_comparison.Fixed_step_size_NUTS_simulation as fn
+import samplers.step_size_adapt_NUTS_b_prime_transform as nuts_b_prime_transform
 
 def plot_average_acceptance_ratios(y_values, positions, filename):
     x_range = 12
@@ -36,7 +38,6 @@ def plot_average_acceptance_ratios(y_values, positions, filename):
 
 
 if __name__ == '__main__':
-
     destination_path = '../results/NUTS_b_prime_transform'
     if not os.path.exists(destination_path):
         os.makedirs(destination_path)

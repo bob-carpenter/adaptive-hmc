@@ -1,5 +1,4 @@
 import numpy as np
-
 import hmc
 
 STEPS_PROGRESSION = [1, 2, 3, 4, 6, 8, 11, 16, 22, 32, 45, 64, 90, 128, 181, 256, 362, 512, 724, 1024]

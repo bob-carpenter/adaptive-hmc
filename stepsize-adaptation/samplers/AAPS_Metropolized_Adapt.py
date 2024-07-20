@@ -1,6 +1,10 @@
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 import numpy as np
-
-import hmc
+import samplers.hmc as hmc
 
 
 # Current status: Changing the adapt step size to also return the number of steps

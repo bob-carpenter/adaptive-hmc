@@ -552,8 +552,8 @@ def uniform_interval_plot(num_seeds, num_draws):
     seed_rng = np.random.default_rng(meta_seed)
     seeds = seed_rng.integers(low=0, high=2 ** 32, size=num_seeds)
     print(f"NUM DRAWS: {num_draws}  NUM SEEDS: {num_seeds}")
-    program_path = "../stan/normal.stan"
-    data_path = "../stan/normal.json"
+    program_path = "../../stan/normal.stan"
+    data_path = "../../stan/normal.json"
     nuts_fit = nuts_adapt(program_path=program_path, data_path=data_path, seed=seeds[0])
     columns = ["stepsize", "path_frac", "val_type", "val"]
     df = pd.DataFrame(columns=columns)

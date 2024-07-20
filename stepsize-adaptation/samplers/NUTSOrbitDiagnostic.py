@@ -1,6 +1,10 @@
-import NUTSOrbit
-import step_size_adapt_NUTS_b_prime_transform
-
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+import samplers.NUTSOrbit as NUTSOrbit
+import samplers.step_size_adapt_NUTS_b_prime_transform as step_size_adapt_NUTS_b_prime_transform
 
 class NUTSTreeNodeDiagnostic(NUTSOrbit.NUTSTreeNode):
     def __init_(self, *args):

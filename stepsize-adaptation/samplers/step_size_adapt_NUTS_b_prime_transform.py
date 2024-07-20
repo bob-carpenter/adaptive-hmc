@@ -1,10 +1,16 @@
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 import traceback
 from dataclasses import dataclass
 
 import numpy as np
 
-import NUTSOrbit
-import hmc
+import samplers.NUTSOrbit as NUTSOrbit
+import samplers.hmc as hmc
 
 class NUTSBprimeTransform(hmc.HmcSamplerBase):
     def __init__(self,

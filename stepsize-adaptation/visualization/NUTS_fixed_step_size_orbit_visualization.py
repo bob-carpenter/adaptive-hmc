@@ -1,10 +1,14 @@
-import traceback
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
+import traceback
 import bridgestan as bs
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, Normalize
-
 import step_size_fixed_NUTS_diagnostic_version as dn
 
 
