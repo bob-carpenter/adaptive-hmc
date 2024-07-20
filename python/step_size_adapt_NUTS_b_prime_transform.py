@@ -1,9 +1,10 @@
 import traceback
-import numpy as np
-import NUTSOrbit
-import hmc
 from dataclasses import dataclass
 
+import numpy as np
+
+import NUTSOrbit
+import hmc
 
 class NUTSBprimeTransform(hmc.HmcSamplerBase):
     def __init__(self,
@@ -15,7 +16,7 @@ class NUTSBprimeTransform(hmc.HmcSamplerBase):
                  max_stepsize,
                  max_stepsize_search_depth,
                  max_nuts_depth,
-                 orbit_class = NUTSOrbit.NUTSOrbit
+                 orbit_class=NUTSOrbit.NUTSOrbit
                  ):
         super().__init__(model, 0, rng)
         self._theta = theta
@@ -81,12 +82,12 @@ class NUTSBprimeTransform(hmc.HmcSamplerBase):
                                                                              i,
                                                                              self._rng)
                     orbit_with_adapted_step_size = self._orbit_constructor(self,
-                                                                       self._rng,
-                                                                       theta,
-                                                                       rho,
-                                                                       adapted_step_size.proposal_step_size(),
-                                                                       2 ** adapted_step_size.log_number_intermediate_steps(),
-                                                                       bernoulli_sequence)
+                                                                           self._rng,
+                                                                           theta,
+                                                                           rho,
+                                                                           adapted_step_size.proposal_step_size(),
+                                                                           2 ** adapted_step_size.log_number_intermediate_steps(),
+                                                                           bernoulli_sequence)
                     return adapted_step_size, orbit_with_adapted_step_size
 
             except Exception:
@@ -96,12 +97,12 @@ class NUTSBprimeTransform(hmc.HmcSamplerBase):
                                                                  self._max_stepsize_search_depth,
                                                                  self._rng)
         orbit_with_adapted_step_size = self._orbit_constructor(self,
-                                                           self._rng,
-                                                           theta,
-                                                           rho,
-                                                           adapted_step_size.proposal_step_size(),
-                                                           2 ** adapted_step_size.log_number_intermediate_steps(),
-                                                           bernoulli_sequence)
+                                                               self._rng,
+                                                               theta,
+                                                               rho,
+                                                               adapted_step_size.proposal_step_size(),
+                                                               2 ** adapted_step_size.log_number_intermediate_steps(),
+                                                               bernoulli_sequence)
         return adapted_step_size, orbit_with_adapted_step_size
 
     def adapt_step_size_without_sample(self, theta, rho, bernoulli_sequence):
@@ -109,12 +110,12 @@ class NUTSBprimeTransform(hmc.HmcSamplerBase):
             try:
                 stepsize = self._max_stepsize * np.exp2(-i)
                 nuts_orbit = self._orbit_constructor(self,
-                                                 self._rng,
-                                                 theta,
-                                                 rho,
-                                                 stepsize,
-                                                 2 ** i,
-                                                 bernoulli_sequence)
+                                                     self._rng,
+                                                     theta,
+                                                     rho,
+                                                     stepsize,
+                                                     2 ** i,
+                                                     bernoulli_sequence)
                 if nuts_orbit.energy_gap() < self._energy_gap_bound:
                     adapted_step_size = AdaptedStepSize.from_h_max_and_gamma(self._max_stepsize,
                                                                              i,

@@ -1,8 +1,10 @@
 import numpy as np
+
 import hmc
 
 STEPS_PROGRESSION = [1, 2, 3, 4, 6, 8, 11, 16, 22, 32, 45, 64, 90, 128, 181, 256, 362, 512, 724, 1024]
 LOG_MIN_ACCPET = np.log(0.8)
+
 
 class GistWishartSampler(hmc.HmcSamplerBase):
     def __init__(self, model, theta, rng, integration_time):
@@ -12,8 +14,6 @@ class GistWishartSampler(hmc.HmcSamplerBase):
         self._divergences = 0  # DIAGNOSTIC
         self._no_return = 0  # DIAGNOSTIC
 
-    
-        
     def draw_step_lp(self, theta, rho):
         lp_theta_rho = self.log_joint(theta, rho)
         for steps in STEPS_PROGRESSION:
@@ -23,7 +23,7 @@ class GistWishartSampler(hmc.HmcSamplerBase):
             if lp_theta_rho_star - lp_theta_rho > LOG_MIN_ACCEPT:
                 return self._rng.uniform(0, self._stepsize), -np.log(self._stepsize)
         return self._stepsize, 0
-            
+
     def step_lp(self, step, theta, rho):
         orig_stepsize = self._stepsize
         lp_theta_rho = self.log_joint(theta, rho)
@@ -39,7 +39,7 @@ class GistWishartSampler(hmc.HmcSamplerBase):
                 return -np.log(0.5 * stepsize)
         self._stepsize = orig_stepsize
         return 1
-    
+
     def draw(self):
         try:
             self._rho = self._rng.normal(size=self._model.param_unc_num())
@@ -56,8 +56,8 @@ class GistWishartSampler(hmc.HmcSamplerBase):
                 self._no_return += 1  # DIAGNOSTIC
                 return self._theta, self._rho
             log_accept = (
-                (lp_theta_rho_star + lp_step_theta_star)
-                - (lp_theta_rho + lp_step_theta)
+                    (lp_theta_rho_star + lp_step_theta_star)
+                    - (lp_theta_rho + lp_step_theta)
             )
             if not np.log(self._rng.uniform()) > log_accept:
                 self._theta = theta_star
@@ -66,4 +66,3 @@ class GistWishartSampler(hmc.HmcSamplerBase):
             print(f"  REJECT: EXCEPTION {e = }")
             self._divergences += 1  # DIAGNOSTIC
         return self._theta, self._rho
-

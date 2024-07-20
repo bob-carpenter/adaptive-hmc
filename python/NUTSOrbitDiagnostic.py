@@ -1,5 +1,7 @@
 import NUTSOrbit
 import step_size_adapt_NUTS_b_prime_transform
+
+
 class NUTSTreeNodeDiagnostic(NUTSOrbit.NUTSTreeNode):
     def __init_(self, *args):
         super().__init__(*args)
@@ -14,7 +16,7 @@ class NUTSTreeNodeDiagnostic(NUTSOrbit.NUTSTreeNode):
                         left_rho,
                         energy_max,
                         energy_min,
-                        intermediate_grid_points = None):
+                        intermediate_grid_points=None):
         leaf = super().initialize_leaf(orbit, left_theta, left_rho, energy_max, energy_min)
         leaf._intermediate_grid_points = intermediate_grid_points
         return leaf
@@ -27,6 +29,7 @@ class NUTSTreeNodeDiagnostic(NUTSOrbit.NUTSTreeNode):
         left._parent = new_root
         right._parent = new_root
         return new_root
+
     @classmethod
     def combine_lower_level_trees(cls, left, right, sample):
         new_root = super().combine_lower_level_trees(left, right, sample)
@@ -36,8 +39,10 @@ class NUTSTreeNodeDiagnostic(NUTSOrbit.NUTSTreeNode):
         right._parent = new_root
         return new_root
 
+
 class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
     orbits = []
+
     def __init__(self,
                  sampler,
                  rng,
@@ -46,7 +51,7 @@ class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
                  stepsize,
                  number_fine_grid_leapfrog_steps,
                  bernoulli_sequence,
-                 tree_node_class = NUTSTreeNodeDiagnostic):
+                 tree_node_class=NUTSTreeNodeDiagnostic):
         self.orbits.append(self)
         super().__init__(sampler,
                          rng,
@@ -56,7 +61,6 @@ class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
                          number_fine_grid_leapfrog_steps,
                          bernoulli_sequence,
                          tree_node_class)
-
 
     def iterated_leapfrog_with_energy_max_min(self, theta, rho):
         max_energy = min_energy = -self._sampler.log_joint(theta, rho)
@@ -79,14 +83,14 @@ class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
              energy_max_interior,
              energy_min_interior,
              intermediate_grid_points) = self.iterated_leapfrog_with_energy_max_min(right_theta_existing_tree,
-                                                                               right_rho_existing_tree)
+                                                                                    right_rho_existing_tree)
 
             return self._tree_node_class.initialize_leaf(self,
-                                                left_theta_forward_subtree,
-                                                left_rho_forward_subtree,
-                                                energy_max_interior,
-                                                energy_min_interior,
-                                                intermediate_grid_points)
+                                                         left_theta_forward_subtree,
+                                                         left_rho_forward_subtree,
+                                                         energy_max_interior,
+                                                         energy_min_interior,
+                                                         intermediate_grid_points)
 
         root_left_subtree = self.evaluate_forward(right_theta_existing_tree,
                                                   right_rho_existing_tree,
@@ -102,6 +106,7 @@ class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
             return root_right_subtree
 
         return self.combine_lower_level_trees(root_left_subtree, root_right_subtree)
+
     @classmethod
     def clear_orbits(cls):
         cls.orbits = []
@@ -109,6 +114,8 @@ class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
     @classmethod
     def get_orbits(cls):
         return cls.orbits
+
+
 class NUTSBprimeTransformDiagnostic(step_size_adapt_NUTS_b_prime_transform.NUTSBprimeTransform):
     def __init__(self, *args):
         super().__init__(*args)
@@ -121,5 +128,3 @@ class NUTSBprimeTransformDiagnostic(step_size_adapt_NUTS_b_prime_transform.NUTSB
 
     def refresh_velocity(self):
         return self._rho
-
-

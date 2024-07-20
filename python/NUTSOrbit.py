@@ -1,5 +1,8 @@
-import numpy as np
 from dataclasses import dataclass
+
+import numpy as np
+
+
 @dataclass
 class NUTSSample:
     _theta: float
@@ -9,6 +12,7 @@ class NUTSSample:
     def reverse_time(self):
         self._bernoulli_sequence = tuple(1 - x for x in self._bernoulli_sequence)
         self._rho = -self._rho
+
 
 @dataclass
 class NUTSTreeNode:
@@ -108,10 +112,10 @@ class NUTSOrbit:
     def coarse_fine_nuts(self):
         energy_max = energy_min = -self._sampler.log_joint(self._theta, self._rho)
         nuts_root_node = self._tree_node_class.initialize_leaf(self,
-                                                      self._theta,
-                                                      self._rho,
-                                                      energy_max,
-                                                      energy_min)
+                                                               self._theta,
+                                                               self._rho,
+                                                               energy_max,
+                                                               energy_min)
 
         for forward in self._bernoulli_sequence:
             if forward:
@@ -143,10 +147,10 @@ class NUTSOrbit:
                                                                                right_rho_existing_tree)
 
             return self._tree_node_class.initialize_leaf(self,
-                                                left_theta_forward_subtree,
-                                                left_rho_forward_subtree,
-                                                energy_max_interior,
-                                                energy_min_interior)
+                                                         left_theta_forward_subtree,
+                                                         left_rho_forward_subtree,
+                                                         energy_max_interior,
+                                                         energy_min_interior)
 
         root_left_subtree = self.evaluate_forward(right_theta_existing_tree,
                                                   right_rho_existing_tree,
@@ -230,158 +234,3 @@ class NUTSOrbit:
 
     def sample_bernoulli_sequence(self):
         return self._orbit_root._sample._bernoulli_sequence
-
-'''
-
-            theta, rho = self._theta, self._rho
-            left_theta = theta
-            left_rho = rho
-            right_theta = theta
-            right_rho = rho
-            height = 0
-            sample_theta = theta
-            sample_rho = rho
-            log_weight_current = self._sampler.log_joint(theta, rho)
-            log_weight_new = 0
-            energy_max = energy_min = -self._sampler.log_joint(theta, rho)
-
-            for forward in self._bernoulli_sequence:
-                if forward:
-                    (extension_theta,
-                     extension_rho,
-                     energy_max_interior_fine_grid,
-                     energy_min_interior_fine_grid) = self.iterated_leapfrog_with_energy_max_min(right_theta,
-                                                                                                 right_rho)
-
-                    (right_theta,
-                     right_rho,
-                     extension_sample_theta,
-                     extension_sample_rho,
-                     log_weight_new,
-                     sub_u_turn,
-                     extension_energy_max,
-                     extension_energy_min) = self.evaluate_proposed_subtree(extension_theta,
-                                                                            extension_rho,
-                                                                            height)
-                else:
-                    (extension_theta,
-                     extension_rho,
-                     energy_max_interior_fine_grid,
-                     energy_min_interior_fine_grid) = self.iterated_leapfrog_with_energy_max_min(left_theta,
-                                                                                                 -left_rho)
-                    (left_theta,
-                     left_rho,
-                     extension_sample_theta,
-                     extension_sample_rho,
-                     log_weight_new,
-                     sub_u_turn,
-                     extension_energy_max,
-                     extension_energy_min) = self.evaluate_proposed_subtree(extension_theta,
-                                                                            extension_rho,
-                                                                            height)
-
-                    left_rho = -left_rho
-
-                if sub_u_turn:
-                    return sample_theta, sample_rho, energy_max, energy_min
-
-                sample_theta, sample_rho = self.resample_top(sample_theta,
-                                                             sample_rho,
-                                                             extension_sample_theta,
-                                                             extension_sample_rho,
-                                                             log_weight_current,
-                                                             log_weight_new)
-                height += 1
-                log_weight_current =  np.logaddexp(log_weight_current, log_weight_new)
-                energy_max = max(energy_max, energy_max_interior_fine_grid, extension_energy_max)
-                energy_min = min(energy_min, energy_min_interior_fine_grid, extension_energy_min)
-
-                if self.nuts_style_u_turn(left_theta, left_rho, right_theta, right_rho):
-                    return sample_theta, sample_rho, energy_max, energy_min
-
-            return sample_theta, sample_rho, energy_max, energy_min
-
-        def evaluate_proposed_subtree(self, theta, rho, height):
-            if height == 0:
-                return (theta,
-                        rho,
-                        theta,
-                        rho,
-                        self._sampler.log_joint(theta, rho),
-                        False,
-                        -self._sampler.log_joint(theta, rho),
-                        -self._sampler.log_joint(theta, rho))
-
-            (theta_right_subtree_left,
-             rho_right_subtree_left,
-             sample_theta_subtree_left,
-             sample_rho_subtree_left,
-             log_weight_subtree_left,
-             sub_u_turn_subtree_left,
-             energy_max_fine_grid_left,
-             energy_min_fine_grid_left) = self.evaluate_proposed_subtree(theta, rho, height - 1)
-
-            if sub_u_turn_subtree_left:
-                return (theta, rho, theta, rho, 0, True, 0, 0)
-
-            (theta_left_subtree_right,
-             rho_left_subtree_right,
-             energy_max_interior_fine_grid,
-             energy_min_interior_fine_grid) = self.iterated_leapfrog_with_energy_max_min(theta_right_subtree_left,
-                                                                                         rho_right_subtree_left)
-
-            (theta_right_subtree_right,
-             rho_right_subtree_right,
-             sample_theta_subtree_right,
-             sample_rho_subtree_right,
-             log_weight_subtree_right,
-             sub_u_turn_subtree_right,
-             energy_max_fine_grid_right,
-             energy_min_fine_grid_right) = self.evaluate_proposed_subtree(theta_left_subtree_right,
-                                                                          rho_left_subtree_right,
-                                                                          height - 1)
-
-            sub_u_turn = (sub_u_turn_subtree_left) or (sub_u_turn_subtree_right) or self.nuts_style_u_turn(theta,
-                                                                                                           rho,
-                                                                                                           theta_right_subtree_right,
-                                                                                                           rho_right_subtree_right)
-
-            if sub_u_turn:
-                return (theta, rho, theta, rho, 0, True, 0, 0)
-
-            sample_theta, sample_rho = self.resample_sub_tree(sample_theta_subtree_left,
-                                                              sample_rho_subtree_left,
-                                                              sample_theta_subtree_right,
-                                                              sample_rho_subtree_right,
-                                                              log_weight_subtree_left,
-                                                              log_weight_subtree_right)
-
-            log_weight_subtree = np.logaddexp(log_weight_subtree_left, log_weight_subtree_right)
-            energy_max = max(energy_max_fine_grid_left, energy_max_interior_fine_grid, energy_max_fine_grid_right)
-            energy_min = min(energy_min_fine_grid_left, energy_min_interior_fine_grid, energy_min_fine_grid_right)
-
-            return (theta_right_subtree_right,
-                    rho_right_subtree_right,
-                    sample_theta,
-                    sample_rho,
-                    log_weight_subtree,
-                    sub_u_turn,
-                    energy_max,
-                    energy_min)
-
-        def resample_top(self, sample_theta, sample_rho, new_sample_theta, new_sample_rho, log_weight_current, log_weight_new):
-            if np.log(self._rng.uniform(0, 1)) < log_weight_new - np.logaddexp(log_weight_current, log_weight_new):
-                return new_sample_theta, new_sample_rho
-            else:
-                return sample_theta, sample_rho
-
-        def resample_sub_tree(self, sample_theta, sample_rho, new_sample_theta, new_sample_rho, log_weight_current, log_weight_new):
-            if np.log(self._rng.uniform(0, 1)) < log_weight_new - np.logaddexp(log_weight_current,  log_weight_new):
-                return new_sample_theta, new_sample_rho
-            else:
-                return sample_theta, sample_rho
-
-        def nuts_style_u_turn(self, left_theta, left_rho, right_theta, right_rho):
-            delta_theta = right_theta - left_theta
-            return (np.dot(delta_theta, left_rho) < 0) and (np.dot(delta_theta, right_rho) < 0)
-    '''

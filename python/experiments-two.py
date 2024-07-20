@@ -1,12 +1,9 @@
-import one_way_multinomial as ows
-import cmdstanpy as csp
-import numpy as np
 import bridgestan as bs
-import plotnine as pn
+import numpy as np
+import one_way_multinomial as ows
 import pandas as pd
-import logging
-import traceback
-import warnings
+import plotnine as pn
+
 
 def learning_curve_plot():
     seed = 189236576
@@ -25,12 +22,12 @@ def learning_curve_plot():
     means = np.mean(param_draws, axis=0)
     std_devs = np.std(param_draws, axis=0)
     print(f"{means=}  {std_devs=}")
-    
+
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
     abs_err = np.abs(cumsum_draws) / divisors
     avg_abs_err = np.mean(abs_err, axis=1)
-    
+
     draws_sq = draws ** 2
     cumsum_draws_sq = np.cumsum(draws_sq, axis=0)
     abs_err_sq = np.abs(cumsum_draws_sq / divisors - 1)  # E[ChiSquare(1)] = 1
@@ -53,21 +50,22 @@ def learning_curve_plot():
         }
     )
     plot = (
-        pn.ggplot(df, pn.aes(x="iteration", y="|error|"))
-        + pn.geom_line()
-        + pn.scale_x_log10(limits=(10, N))
-        + pn.scale_y_log10()
-        + pn.geom_segment(
-            data=lines_df,
-            mapping=pn.aes(x="x", y="y", xend="xend", yend="yend"),
-            linetype="dotted",
-        )
-        + pn.facet_wrap("~ estimand")
+            pn.ggplot(df, pn.aes(x="iteration", y="|error|"))
+            + pn.geom_line()
+            + pn.scale_x_log10(limits=(10, N))
+            + pn.scale_y_log10()
+            + pn.geom_segment(
+        data=lines_df,
+        mapping=pn.aes(x="x", y="y", xend="xend", yend="yend"),
+        linetype="dotted",
+    )
+            + pn.facet_wrap("~ estimand")
     )
     plot.save(filename="learning_curve.pdf", width=6, height=3)
 
-learning_curve_plot()    
-    
+
+learning_curve_plot()
+
 # def orbital_experiment(
 #         program,
 #         stepsize,
@@ -79,6 +77,5 @@ learning_curve_plot()
 #     rng = np.random.default_rng(seed)
 #     theta = rng.normal(
 #     sampler = os.OrbitalSampler(model_bs, stepsize=0.3, rng=rng, 
-    
+
 # orbital_experiment('normal', 0.3, 8, 12349876)
-        

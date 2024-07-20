@@ -1,6 +1,8 @@
-import hmc
 import NUTSOrbit
-class VanillaNUTS(hmc.HmcSamplerBase):
+import hmc
+
+
+class FixedStepSizeNUTS(hmc.HmcSamplerBase):
     def __init__(self,
                  model,
                  rng,
@@ -25,14 +27,10 @@ class VanillaNUTS(hmc.HmcSamplerBase):
     def NUTS(self, theta, rho, max_height):
         bernoulli_sequence = tuple(self._rng.binomial(1, 0.5, max_height))
         sample_orbit = NUTSOrbit.NUTSOrbit(self,
-                                  self._rng,
-                                  theta,
-                                  rho,
-                                  self._stepsize,
-                                  1,
-                                  bernoulli_sequence)
+                                           self._rng,
+                                           theta,
+                                           rho,
+                                           self._stepsize,
+                                           1,
+                                           bernoulli_sequence)
         return sample_orbit
-
-
-
-

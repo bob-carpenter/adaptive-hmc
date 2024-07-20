@@ -1,5 +1,8 @@
 import numpy as np
+
 import hmc
+
+
 # Current status: Changing the adapt step size to also return the number of steps
 # used over the fine grid AFTER the random multiplier.
 
@@ -80,8 +83,8 @@ class AAPSMetropolizedAdapt(hmc.HmcSamplerBase):
 
         self._no_return_rejects += (1 - accept_index_selection)
         acceptance_probability = accept_step_size * ratio_norm_fact * accept_index_selection * boltzmann_ratio
-        #print(f"Number of apogees proposal: {coarse_interval_proposal.get_number_apogees()}")
-        #print(f"Shift proposal: {coarse_interval_proposal.get_shift()}")
+        # print(f"Number of apogees proposal: {coarse_interval_proposal.get_number_apogees()}")
+        # print(f"Shift proposal: {coarse_interval_proposal.get_shift()}")
         if self._rng.uniform() < acceptance_probability:
             theta = proposal_theta
             rho = proposal_rho
@@ -187,7 +190,7 @@ class CoarseLevelIntervalAAPS:
         if self._number_apogees is None or self._shift is None:
             raise ValueError("The number of apogees or the shift has not been set at the coarse level")
         self._iterate_num_segments_right = self.iterate_over_single_side_coarse(1, self._number_apogees - self._shift)
-        #print("\n \n \n Done with right side \n \n \n")
+        # print("\n \n \n Done with right side \n \n \n")
         self._iterate_num_segments_left = self.iterate_over_single_side_coarse(-1, self._shift + 1)
         self._number_left = self._iterate_num_segments_left[-1]
         self._number_right = self._iterate_num_segments_right[-1]
@@ -203,27 +206,27 @@ class CoarseLevelIntervalAAPS:
         while number_changes_seen < num_segments:
             next_theta, next_rho = self._sampler.leapfrog_step(current_theta, direction * current_rho)
             next_rho = direction * next_rho
-            #If the direction is -1, then we are going backwards
+            # If the direction is -1, then we are going backwards
             _, next_grad = self._sampler.log_density_gradient_at_theta(next_theta)
-            #We're calcluating the gradient twice. In the next
-            #version lets either cache the gradient or compute this during
-            #the leapfrog step
+            # We're calcluating the gradient twice. In the next
+            # version lets either cache the gradient or compute this during
+            # the leapfrog step
 
             next_sign = np.dot(next_rho, next_grad)
             if current_sign * next_sign < 0:
-                #print("Hit an apogee")
+                # print("Hit an apogee")
                 number_changes_seen += 1
                 iterate_numbers_marking_segments.append(current_iterate_index)
-            #else:
-            #print("Still looking for a sign change")
-            #print("Current sign: ", current_sign)
-            #print("Current position: ", current_theta)
-            #print("Stepsize: ", self._stepsize)
+            # else:
+            # print("Still looking for a sign change")
+            # print("Current sign: ", current_sign)
+            # print("Current position: ", current_theta)
+            # print("Stepsize: ", self._stepsize)
             if number_changes_seen == num_segments:
-                #print("Hit the endpoint")
+                # print("Hit the endpoint")
                 break
-                #In this case the iterate is the endpoint and should not be
-                #considered to be resampled
+                # In this case the iterate is the endpoint and should not be
+                # considered to be resampled
             current_theta = next_theta
             current_rho = next_rho
             current_sign = next_sign
@@ -263,13 +266,16 @@ class CoarseLevelIntervalAAPS:
 
     def proposal_shift(self):
         return self._shift + self._sample_coarse_grid_segment_index
+
     def step_size_acceptance(self, intial_fine_grid):
         return int(abs(self._depth - intial_fine_grid._depth) <= 1)
 
     def normalization_factor(self):
         return self._total_weight
+
     def sample_index(self):
         return self._sample_index
+
     def accept_index_selection(self, initial_fine_grid):
         proposal_index = -initial_fine_grid._sample_index
         number_left = -self._iterate_num_segments_left[-1]
@@ -278,6 +284,7 @@ class CoarseLevelIntervalAAPS:
 
     def initial_energy(self):
         return self._initial_energy
+
 
 class FineLevelIntervalAAPS:
     def __init__(self, sampler, rng, theta, rho, coarse_grid, depth):
@@ -307,7 +314,7 @@ class FineLevelIntervalAAPS:
 
     def iterate_over_both_sides_fine(self):
         self.iterate_over_single_side_fine(1, self._iterate_num_segments_right)
-        #print("\n \n \n Done with right side \n \n \n")
+        # print("\n \n \n Done with right side \n \n \n")
         self.iterate_over_single_side_fine(-1, self._iterate_num_segments_left)
 
     def iterate_over_single_side_fine(self, direction, iterate_num_marking_segments):
@@ -316,12 +323,12 @@ class FineLevelIntervalAAPS:
         current_iterate_index = 0
         current_energy = -self._sampler.log_joint(current_theta, current_rho)
         current_weight = np.exp(-(current_energy - self._initial_energy))
-        #This is some wasted computation, but I'm keeping it for
-        #conceptual clarity
+        # This is some wasted computation, but I'm keeping it for
+        # conceptual clarity
 
         self._max_energy = max(self._max_energy, current_energy)
         self._min_energy = min(self._min_energy, current_energy)
-        #print(f"Direction: {direction}")
+        # print(f"Direction: {direction}")
 
         for segment_index, segment_marker in enumerate(iterate_num_marking_segments):
             for index in range(current_iterate_index, segment_marker):
@@ -331,20 +338,18 @@ class FineLevelIntervalAAPS:
                 current_energy = -self._sampler.log_joint(current_theta, current_rho)
                 current_weight = np.exp(-(current_energy - self._initial_energy))
                 current_iterate_index += 1
-                #print(f"Current weight: {current_weight}")
-                #print(f"Total weight: {self._total_weight}")
-                #print(f"Current index: {index}")
-                #print(f"Current segment index: {segment_index}")
+                # print(f"Current weight: {current_weight}")
+                # print(f"Total weight: {self._total_weight}")
+                # print(f"Current index: {index}")
+                # print(f"Current segment index: {segment_index}")
                 if self._rng.uniform() < current_weight / self._total_weight:
                     self._sample_theta = current_theta
                     self._sample_rho = current_rho
                     self._sample_coarse_grid_segment_index = direction * segment_index
-                    #print(f"Current proposal index {self._sample_coarse_grid_segment_index}")
+                    # print(f"Current proposal index {self._sample_coarse_grid_segment_index}")
                     self._sample_index = direction * (index + 1)
 
-
-                #print(f"Current weight: {current_weight}")
-
+                # print(f"Current weight: {current_weight}")
 
                 self._total_weight += current_weight
                 self._max_energy = max(self._max_energy, current_energy)
@@ -371,7 +376,7 @@ class FineLevelIntervalAAPS:
 
     def proposal_shift(self):
         return self._coarse_grid._shift + self._sample_coarse_grid_segment_index
-        #Accessing the private variable isn't ideal, but it really isn't that big of a deal
+        # Accessing the private variable isn't ideal, but it really isn't that big of a deal
 
     def step_size_acceptance(self, intial_fine_grid):
         return int(abs(self._depth - intial_fine_grid._depth) <= 1)

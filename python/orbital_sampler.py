@@ -1,8 +1,6 @@
 import numpy as np
 import scipy as sp
 import hmc
-import traceback
-
 class OrbitalSampler(hmc.HmcSamplerBase):
     def __init__(self, model, stepsize, rng, theta, steps):
         super().__init__(model, stepsize, rng)
@@ -43,7 +41,7 @@ class OrbitalSampler(hmc.HmcSamplerBase):
             # calculate log probs, convert to probs, and generate categorically
             lps = [self.log_joint(thetas[i, :], rhos[i, :]) for i in range(candidates)]
             probs = sp.special.softmax(lps)
-            i = rng.choice(C, p = probs)
+            i = rng.choice(C, p=probs)
             self._theta, self._rho = thetas[i, :], rhos[i, :]
         except:
             print("EXCEPTION: divergence")
