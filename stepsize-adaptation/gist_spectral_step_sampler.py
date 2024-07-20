@@ -1,5 +1,7 @@
 import numpy as np
+
 import hmc
+
 
 class GistSpectralStepSampler(hmc.HmcSamplerBase):
     def __init__(self, model, theta, rng, lb_frac, max_leapfrog=1024):
@@ -21,7 +23,7 @@ class GistSpectralStepSampler(hmc.HmcSamplerBase):
         ub_step = 1.5 / np.sqrt(lambda_max)
         lb_step = self._lb_frac * ub_step
         return lb_step, ub_step
-        
+
     def draw_step(self, theta):
         min_step, max_step = self.step_bounds(theta)
         step = self._rng.uniform(min_step, max_step)
@@ -34,7 +36,7 @@ class GistSpectralStepSampler(hmc.HmcSamplerBase):
         if step < min_step or step > max_step:
             return np.NINF
         return -np.log(max_step - min_step)
-        
+
     def draw(self):
         try:
             self._rho = self._rng.normal(size=self._model.param_unc_num())
@@ -51,8 +53,8 @@ class GistSpectralStepSampler(hmc.HmcSamplerBase):
                 self._no_return += 1  # DIAGNOSTIC
                 return self._theta, self._rho
             log_accept = (
-                (lp_theta_rho_star + lp_step_theta_star)
-                - (lp_theta_rho + lp_step_theta)
+                    (lp_theta_rho_star + lp_step_theta_star)
+                    - (lp_theta_rho + lp_step_theta)
             )
             if not np.log(self._rng.uniform()) > log_accept:
                 self._theta = theta_star

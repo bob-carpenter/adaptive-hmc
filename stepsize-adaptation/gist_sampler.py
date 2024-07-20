@@ -1,6 +1,6 @@
 import numpy as np
+
 import hmc
-import traceback
 
 
 class GistSampler(hmc.HmcSamplerBase):
@@ -57,9 +57,9 @@ class GistSampler(hmc.HmcSamplerBase):
                 return self._theta, self._rho  # cannot balance w/o return
             self._gradient_evals += L + Lstar - N  # DIAGNOSTIC
             log_accept = (
-                self.log_joint(theta_star, rho_star)
-                - np.log(Lstar - LBstar)
-                - (log_joint_theta_rho - np.log(L - LB))
+                    self.log_joint(theta_star, rho_star)
+                    - np.log(Lstar - LBstar)
+                    - (log_joint_theta_rho - np.log(L - LB))
             )
             if np.log(self._rng.uniform()) < log_accept:
                 self._theta = theta_star
