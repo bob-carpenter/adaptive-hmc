@@ -1,7 +1,7 @@
 import numpy as np
 import scipy as sp
-
 import hmc
+import traceback
 
 
 class GistBinomialSampler(hmc.HmcSamplerBase):
@@ -63,9 +63,9 @@ class GistBinomialSampler(hmc.HmcSamplerBase):
                 return self._theta, self._rho  # cannot balance w/o return
             self._gradient_evals += L + Lstar - N  # DIAGNOSTIC
             log_accept = (
-                    self.log_joint(theta_star, rho_star)
-                    + self.length_log_prob(N, Lstar)
-                    - (log_joint_theta_rho + self.length_log_prob(N, L))
+                self.log_joint(theta_star, rho_star)
+                + self.length_log_prob(N, Lstar)
+                - (log_joint_theta_rho + self.length_log_prob(N, L))
             )
             if np.log(self._rng.uniform()) < log_accept:
                 self._theta = theta_star

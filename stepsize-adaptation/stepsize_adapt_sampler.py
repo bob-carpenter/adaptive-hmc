@@ -1,13 +1,6 @@
-import sys
-import os
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+import hmc
 import numpy as np
 import scipy as sp
-
-import samplers.hmc as hmc
-
 
 class StepAdaptSampler(hmc.HmcSamplerBase):
     def __init__(self, model, rng, integration_time, theta, min_accept_prob):
@@ -15,11 +8,11 @@ class StepAdaptSampler(hmc.HmcSamplerBase):
         self._T = integration_time
         self._theta = theta
         self._log_min_accept_prob = np.log(min_accept_prob)
-        self._steps = np.unique(np.array(np.sqrt(2) ** range(21), dtype=int))
+        self._steps = np.unique(np.array(np.sqrt(2)**range(21), dtype=int))
 
     def reject(self, min_lp, max_lp):
         return min_lp - max_lp < self._log_min_accept_prob
-
+        
     def stable_steps(self, theta0, rho0, lp0, T):
         for L in self._steps:
             theta, rho = theta0, rho0

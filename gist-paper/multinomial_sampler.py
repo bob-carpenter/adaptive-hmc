@@ -1,5 +1,5 @@
-import numpy as np
 import hmc
+import numpy as np
 
 
 class MultinomialSampler(hmc.HmcSamplerBase):

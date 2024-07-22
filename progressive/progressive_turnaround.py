@@ -1,20 +1,19 @@
 import numpy as np
-
 import hmc
-
+import traceback
 
 class ProgressiveTurnaroundSampler(hmc.HmcSamplerBase):
-    def __init__(self, model, stepsize, theta, rng, max_leapfrog=512):
+    def __init__(self, model, stepsize, theta, rng, max_leapfrog = 512):
         super().__init__(model, stepsize, rng)
-        self._uturn_condition = "blah"  # uturn_condition
-        self._path_fraction = "blah"  # path_fractifon
+        self._uturn_condition = "blah" # uturn_condition
+        self._path_fraction = "blah" # path_fractifon
         self._max_leapfrog_steps = max_leapfrog
         self._theta = theta
         self._cannot_get_back_rejects = 0  # DIAGNOSTIC
-        self._fwds = []  # DIAGNOSTIC
-        self._bks = []  # DIAGNOSTIC
-        self._divergences = 0  # DIAGNOSTIC
-        self._gradient_evals = 0  # DIAGNOSTIC
+        self._fwds = []                    # DIAGNOSTIC
+        self._bks = []                     # DIAGNOSTIC
+        self._divergences = 0              # DIAGNOSTIC
+        self._gradient_evals = 0           # DIAGNOSTIC
 
     def uturn(self, theta, rho):
         H0 = self.log_joint(theta, rho)
@@ -56,7 +55,7 @@ class ProgressiveTurnaroundSampler(hmc.HmcSamplerBase):
             self._fwds.append(N)
             self._bks.append(M)
 
-            if not (1 <= L and L <= M):
+            if not(1 <= L and L <= M):
                 self._cannot_get_back_rejects += 1
                 return self._theta, self._rho  # unbalance-able
 
