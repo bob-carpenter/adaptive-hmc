@@ -1,3 +1,5 @@
+import os
+
 import bridgestan as bs
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,9 +19,9 @@ def create_model_stan_and_json(stan_name, json_name):
     return model_bs
 
 
-def funnel_test(sampler_constructor, N, destination_path, title, funnel):
+def funnel_test(sampler_constructor, N, destination_path, title):
     seed = 12909067
-    model = create_model_stan_and_json("funnel", funnel)
+    model = create_model_stan_and_json("funnel", 'funnel')
     D = model.param_unc_num()
     draw_contours = (D == 2)
     rng = np.random.default_rng(seed)
@@ -180,14 +182,16 @@ def plot_funnel_marginals_exact_samples(N, d, filename):
 
 
 if __name__ == '__main__':
-    destination_path = "../results/Fixed_step_size_NUTS_simulation"
-    if not os.path.exists(destination_path):
-        os.makedirs(destination_path)
+    current_directory = os.path.dirname(os.path.abspath(__file__))
+    destination_directory = f"{current_directory}/results/Fixed_step_size_NUTS_simulation"
+    if not os.path.exists(destination_directory):
+        os.makedirs(destination_directory)
 
     step_size = 1 / 4
     nuts_depth = 10
-    N = 500
-    funnel = 'funnel'
+    N = 50_000
+    filename = f"TEST_NUTS_with_step_size_{step_size}_and_NUTS_depth_{nuts_depth}_N_{N}"
+
     sampler_constructor = lambda model, rng, theta0: vn.FixedStepSizeNUTS(model,
                                                                           rng,
                                                                           theta0,
@@ -196,6 +200,5 @@ if __name__ == '__main__':
                                                                           nuts_depth)
     draws = funnel_test(sampler_constructor,
                         N,
-                        destination_path,
-                        f"TEST_NUTS_with_step_size_{step_size}_and_NUTS_depth_{nuts_depth}_N_{N}",
-                        funnel)
+                        destination_directory,
+                        filename)

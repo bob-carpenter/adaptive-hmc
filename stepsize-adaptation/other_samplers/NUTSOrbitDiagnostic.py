@@ -120,7 +120,7 @@ class NUTSOrbitDiagnostic(NUTSOrbit.NUTSOrbit):
         return cls.orbits
 
 
-class NUTSBprimeTransformDiagnostic(step_size_adapt_NUTS_b_prime_transform.NUTSBprimeTransform):
+class NUTSBprimeTransformDiagnostic(step_size_adapt_NUTS_b_prime_transform.StepAdaptNUTSMetro):
     def __init__(self, *args):
         super().__init__(*args)
 

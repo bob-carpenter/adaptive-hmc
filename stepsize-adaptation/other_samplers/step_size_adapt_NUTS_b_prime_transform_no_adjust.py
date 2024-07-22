@@ -6,7 +6,7 @@ sys.path.insert(0, parent_dir)
 import samplers.step_size_adapt_NUTS_b_prime_transform as nuts_b_prime_transform
 
 
-class NUTSBPrimeNoAdjust(nuts_b_prime_transform.NUTSBprimeTransform):
+class NUTSBPrimeNoAdjust(nuts_b_prime_transform.StepAdaptNUTSMetro):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._name = "NUTS_b_prime_transform_no_adjust"

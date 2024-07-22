@@ -6,7 +6,7 @@ import numpy as np
 import NUTSOrbit as NUTSOrbit
 import hmc as hmc
 
-class NUTSBprimeTransform(hmc.HmcSamplerBase):
+class StepAdaptNUTSMetro(hmc.HmcSamplerBase):
     def __init__(self,
                  model,
                  rng,
