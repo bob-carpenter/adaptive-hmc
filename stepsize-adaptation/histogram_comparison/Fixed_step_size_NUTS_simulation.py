@@ -1,8 +1,3 @@
-import os
-import sys
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
 import bridgestan as bs
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +5,7 @@ import pandas as pd
 import plotnine as pn
 import scipy as sp
 
-import samplers.step_size_fixed_NUTS as vn
+import step_size_fixed_NUTS as vn
 
 
 def create_model_stan_and_json(stan_name, json_name):
