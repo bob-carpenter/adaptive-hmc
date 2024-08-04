@@ -189,7 +189,7 @@ if __name__ == '__main__':
 
     step_size = 1 / 4
     nuts_depth = 10
-    N = 50_000
+    N = 150_000
     filename = f"TEST_NUTS_with_step_size_{step_size}_and_NUTS_depth_{nuts_depth}_N_{N}"
 
     sampler_constructor = lambda model, rng, theta0: vn.FixedStepSizeNUTS(model,

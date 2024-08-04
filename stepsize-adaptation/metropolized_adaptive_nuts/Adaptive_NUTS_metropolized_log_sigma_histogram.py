@@ -1,10 +1,10 @@
 import os
 import sys
-
 import matplotlib.pyplot as plt
 import numpy as np
 import Fixed_step_size_NUTS_log_sigma_histogram as fn
 import step_size_adapt_NUTS_metropolized as nuts_b_prime_transform
+import time
 
 def plot_average_acceptance_ratios(y_values, positions, filename):
     x_range = 12
@@ -34,18 +34,19 @@ def plot_average_acceptance_ratios(y_values, positions, filename):
 
 
 if __name__ == '__main__':
+    start_time = time.time()
     current_directory = os.path.dirname(os.path.abspath(__file__))
     destination_directory = f'{current_directory}/results/NUTS_b_prime_transform'
 
     if not os.path.exists(destination_directory):
         os.makedirs(destination_directory)
 
-    stepsize = 1 / 4
+    stepsize = 1 / 2
     nuts_depth = 10
     max_step_size_search_depth = 10
     min_acceptance_rate = 0.7
     distribution = 'funnel'
-    N = 50_000
+    N = 150_000
     filename = f"stepsize_{stepsize}_NUTS_depth_{nuts_depth}_stepdepth_{max_step_size_search_depth}_min_accept_{min_acceptance_rate}_N_{N}"
 
     sampler_constructor_adjust = lambda model, rng, theta0: nuts_b_prime_transform.StepAdaptNUTSMetro(model,
@@ -63,7 +64,7 @@ if __name__ == '__main__':
     sampler, draws = fn.funnel_test(sampler_constructor_adjust,
                                     N,
                                     destination_directory,
-                                    distribution)
+                                    filename)
 
     print(f"For sampler name {sampler._name} and N = {N} we have: ")
     print(f"Number of rejections: {sampler._no_return_rejections}")
@@ -74,4 +75,6 @@ if __name__ == '__main__':
         draws[:-1, 0],
         f'{destination_directory}/Acceptance_ratios_step_size_{stepsize}_NUTS_depth_{nuts_depth}_N_{N}_min_accept{min_acceptance_rate}.png'
     )
+    end_time = time.time()
+    print(f"Time taken: {end_time - start_time}")
 
