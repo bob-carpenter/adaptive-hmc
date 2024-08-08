@@ -5,7 +5,7 @@ import numpy as np
 import Fixed_step_size_NUTS_log_sigma_histogram as fn
 import step_size_adapt_NUTS_metropolized as nuts_b_prime_transform
 import time
-
+import datetime
 def plot_average_acceptance_ratios(y_values, positions, filename):
     x_range = 12
     x_bins = np.linspace(-x_range, x_range, x_range * 10 + 1)
@@ -67,6 +67,7 @@ if __name__ == '__main__':
                                     filename)
 
     print(f"For sampler name {sampler._name} and N = {N} we have: ")
+    print(f"Sampler dimension: {sampler._model.param_unc_num()}")
     print(f"Number of rejections: {sampler._no_return_rejections}")
     print(f'Average number of halvings = {np.mean(sampler._adapted_step_sizes)}')
 
@@ -76,5 +77,5 @@ if __name__ == '__main__':
         f'{destination_directory}/Acceptance_ratios_step_size_{stepsize}_NUTS_depth_{nuts_depth}_N_{N}_min_accept{min_acceptance_rate}.png'
     )
     end_time = time.time()
-    print(f"Time taken: {end_time - start_time}")
+    print(f"Time taken: {str(datetime.timedelta(seconds = end_time - start_time))}")
 
