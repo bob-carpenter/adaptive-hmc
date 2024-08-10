@@ -2,14 +2,14 @@ import numpy as np
 import traceback
 
 class HmcSamplerBase:
-    def __init__(self, model, stepsize, rng, theta, rho, inv_mass_matrix):
+    def __init__(self, model, stepsize, rng, theta, rho, mass_matrix):
         self._model = model
         self._stepsize = stepsize
         self._rng = rng
         self._theta = theta
         self._rho = rho
         self._ZEROS = np.zeros(model.param_unc_num())
-        set_inv_mass(inv_mass_matrix if inv_mass_matrix is not None else np.eye(model.param_unc_num()))
+        self.set_mass(mass_matrix if mass_matrix is not None else np.eye(model.param_unc_num()))
         
     def __iter__(self):
         return self
@@ -20,6 +20,10 @@ class HmcSamplerBase:
     def set_inv_mass(self, inv_mass_matrix):
         self._inv_mass = inv_mass_matrix
         self._mass = np.linalg.inv(inv_mass_matrix)
+
+    def set_mass(self, mass_matrix):
+        self._mass = mass_matrix
+        self._inv_mass = np.linalg.inv(mass_matrix)
     
     def refresh_momentum(self):
         self._rho = self._rng.multivariate_normal(self._ZEROS, self._mass)
@@ -28,8 +32,8 @@ class HmcSamplerBase:
         theta, rho = self._theta, self._rho
         try:
             return self.draw()
-        except Exception 
-            print(f"EXCEPTION: {e}")
+        except Exception as e:
+            print(f"EXCEPTION in HmcSamplerBase.safe_draw(): {e}")
             traceback.print_exc()
             self._theta, self._rho = theta, rho
             return self._theta, self._rho
@@ -37,7 +41,7 @@ class HmcSamplerBase:
     def leapfrog_step(self, theta, rho):
         _, grad = self._model.log_density_gradient(theta)
         rho2 = rho + 0.5 * self._stepsize * grad
-        theta2 = theta + self._stepsize * (self._inv_mass * rho2)
+        theta2 = theta + self._stepsize * (self._inv_mass @ rho2)
         _, grad = self._model.log_density_gradient(theta2)
         rho2 += 0.5 * self._stepsize * grad
         return theta2, rho2
@@ -50,7 +54,7 @@ class HmcSamplerBase:
 
     def log_joint(self, theta, rho):
         try:
-            return self._model.log_density(theta) - 0.5 * (rho.T @ self._inv_mass * rho)
+            return self._model.log_density(theta) - 0.5 * (rho.T @ self._inv_mass @ rho)
         except ExceptionType as e:
             print(f"hmc.log_joint() exception: {e}")
             return np.NINF

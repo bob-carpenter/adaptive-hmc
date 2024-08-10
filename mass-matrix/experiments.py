@@ -1,10 +1,13 @@
-import gist_sampler as gs
+import hmc_mass as hm
+
+import bridgestan as bs
 import cmdstanpy as csp
+
 import numpy as np
 import scipy as sp
-import bridgestan as bs
 import plotnine as pn
 import pandas as pd
+
 import logging
 import traceback
 import warnings
@@ -539,24 +542,23 @@ def theta_label_function(variable):
     return label_dict.get(variable, variable)
 
 
-def learning_curve_plot(N=1_000_000, iid=False):
+def learning_curve_plot(N=1_000_000):
     seed = 189236576
-    model_bs = create_model("normal")
+    model_bs = create_model("very-corr-normal")
     D = model_bs.param_unc_num()
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(size=D)
     stepsize = 0.5
-    sampler = gs.GistSampler(
-        model=model_bs, stepsize=stepsize, theta=theta0, frac=0.0, rng=rng
-    )
-    if iid:
-        draws = rng.normal(0, 1, size=(N, D))
-        save_filename = "learning_curve_iid.pdf"
-        title = "Independent Draws"
-    else:
-        draws = sampler.sample_constrained(N)
-        save_filename = "learning_curve_gist.pdf"
-        title = "GIST Sampler"
+    rho = 0.0 # 0.95
+    mass_matrix = np.eye(D)
+    for i in range(D):
+        for j in range(D):
+            if i != j:
+                mass_matrix[i, j] = rho
+    sampler = hm.EuclideanMala(model_bs, 0.5, rng, theta0, mass_matrix)
+    draws = sampler.sample_constrained(N)
+    save_filename = "learning_curve_gist.pdf"
+    title = "GIST Sampler"
 
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
@@ -602,8 +604,8 @@ def learning_curve_plot(N=1_000_000, iid=False):
         + pn.theme(
             axis_text_x=pn.element_text(margin={"t": -4}),
             axis_text_y=pn.element_text(margin={"r": -6}),
-            panel_spacing_x=0.75,
-            panel_spacing_y=0.5,
+            # panel_spacing_x=0.75,
+            # panel_spacing_y=0.5,
             panel_background=pn.element_blank(),
             panel_grid_major=pn.element_blank(),
             panel_grid_minor=pn.element_blank(),
@@ -616,12 +618,11 @@ def learning_curve_plot(N=1_000_000, iid=False):
 
 
 ### Learning curve validation plots
-plot_learn_iid = learning_curve_plot(1_000_000, iid=True)
-plot_learn_gist = learning_curve_plot(100_000, iid=False)
+plot_learn_gist = learning_curve_plot(100_000)
 
 ### Performance vs. step size and lower bound fraction plots
-plot_lbf = uniform_interval_plot(num_seeds=500, num_draws=100)
+# plot_lbf = uniform_interval_plot(num_seeds=500, num_draws=100)
 
 ### Comparison vs. NUTS plots
-all_vs_nuts(num_seeds=200, num_draws=100, meta_seed=32484894)
-vs_nuts_plot()
+# all_vs_nuts(num_seeds=200, num_draws=100, meta_seed=32484894)
+# vs_nuts_plot()
