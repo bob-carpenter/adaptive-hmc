@@ -544,12 +544,12 @@ def theta_label_function(variable):
 
 
 def learning_curve_plot(N=1_000_000):
-    seed = 576199266
+    seed = 492011
     model_bs = create_model("very-corr-normal")
     D = model_bs.param_unc_num()
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(size=D)
-    stepsize = 0.25
+    stepsize = 1
 
     ### SET rho ###
     rho = 0.9
@@ -558,11 +558,13 @@ def learning_curve_plot(N=1_000_000):
         for j in range(D):
             if i != j:
                 inv_mass_matrix[i, j] = rho
-    sampler = hm.EuclideanMala(model_bs, stepsize, rng, theta0, inv_mass_matrix)
-    # sampler = gwm.GistMassSampler(model_bs, stepsize, rng, theta0, np.eye(D), 100, 1e-6)
+    # mass_matrix = np.linalg.inv(inv_mass_matrix)                
+    # sampler = hm.EuclideanMala(model_bs, stepsize, rng, theta0, inv_mass_matrix)
+    sampler = gwm.GistMassSampler(model_bs, stepsize, rng, theta0, np.eye(D), 100, 1e-6)
     draws = sampler.sample_constrained(N)
+    print(f"acceptance rate: {sampler.accept_rate()}")
     save_filename = "learning_curve_gist.pdf"
-    title = "MALA Mass Sampler"
+    title = "GIST Mass Sampler"
 
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
@@ -625,7 +627,7 @@ def learning_curve_plot(N=1_000_000):
 
 
 ### Learning curve validation plots
-plot_learn_gist = learning_curve_plot(1_000_000)
+plot_learn_gist = learning_curve_plot(20_000)
 
 ### Performance vs. step size and lower bound fraction plots
 # plot_lbf = uniform_interval_plot(num_seeds=500, num_draws=100)
