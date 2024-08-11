@@ -2,14 +2,14 @@ import numpy as np
 import traceback
 
 class HmcSamplerBase:
-    def __init__(self, model, stepsize, rng, theta, rho, mass_matrix):
+    def __init__(self, model, stepsize, rng, theta, rho, inv_mass_matrix):
         self._model = model
         self._stepsize = stepsize
         self._rng = rng
         self._theta = theta
         self._rho = rho
         self._ZEROS = np.zeros(model.param_unc_num())
-        self.set_mass(mass_matrix if mass_matrix is not None else np.eye(model.param_unc_num()))
+        self.set_inv_mass(inv_mass_matrix if inv_mass_matrix is not None else np.eye(model.param_unc_num()))
         
     def __iter__(self):
         return self
@@ -42,8 +42,8 @@ class HmcSamplerBase:
         _, grad = self._model.log_density_gradient(theta)
         rho2 = rho + 0.5 * self._stepsize * grad
         theta2 = theta + self._stepsize * (self._inv_mass @ rho2)
-        _, grad = self._model.log_density_gradient(theta2)
-        rho2 += 0.5 * self._stepsize * grad
+        _, grad2 = self._model.log_density_gradient(theta2)
+        rho2 += 0.5 * self._stepsize * grad2
         return theta2, rho2
 
     # TODO(bob-carpenter): make this more efficient by composing

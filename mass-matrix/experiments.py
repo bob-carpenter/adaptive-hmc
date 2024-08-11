@@ -1,4 +1,5 @@
 import hmc_mass as hm
+import gist_wishart_mass as gwm
 
 import bridgestan as bs
 import cmdstanpy as csp
@@ -543,22 +544,25 @@ def theta_label_function(variable):
 
 
 def learning_curve_plot(N=1_000_000):
-    seed = 189236576
+    seed = 576199266
     model_bs = create_model("very-corr-normal")
     D = model_bs.param_unc_num()
     rng = np.random.default_rng(seed)
     theta0 = rng.normal(size=D)
-    stepsize = 0.5
-    rho = 0.0 # 0.95
-    mass_matrix = np.eye(D)
+    stepsize = 0.25
+
+    ### SET rho ###
+    rho = 0.9
+    inv_mass_matrix = np.eye(D)
     for i in range(D):
         for j in range(D):
             if i != j:
-                mass_matrix[i, j] = rho
-    sampler = hm.EuclideanMala(model_bs, 0.5, rng, theta0, mass_matrix)
+                inv_mass_matrix[i, j] = rho
+    sampler = hm.EuclideanMala(model_bs, stepsize, rng, theta0, inv_mass_matrix)
+    # sampler = gwm.GistMassSampler(model_bs, stepsize, rng, theta0, np.eye(D), 100, 1e-6)
     draws = sampler.sample_constrained(N)
     save_filename = "learning_curve_gist.pdf"
-    title = "GIST Sampler"
+    title = "MALA Mass Sampler"
 
     cumsum_draws = np.cumsum(draws, axis=0)
     divisors = np.arange(1, draws.shape[0] + 1).reshape(-1, 1)
@@ -589,7 +593,10 @@ def learning_curve_plot(N=1_000_000):
     plot = (
         pn.ggplot(df, pn.aes(x="iteration", y="RMSE"))
         + pn.ggtitle(title)
-        + pn.scale_x_log10(limits=(10, N), expand=(0, 0))
+        + pn.scale_x_log10(limits=(10, N),
+                               breaks=[1e1, 1e2, 1e3, 1e4, 1e5, 1e6],
+                               labels=["10", "100", "1K", "10K", "100K", "1M"],
+                               expand=(0, 0))
         + pn.scale_y_log10()
         + pn.geom_segment(
             data=lines_df,
@@ -604,7 +611,7 @@ def learning_curve_plot(N=1_000_000):
         + pn.theme(
             axis_text_x=pn.element_text(margin={"t": -4}),
             axis_text_y=pn.element_text(margin={"r": -6}),
-            # panel_spacing_x=0.75,
+            panel_spacing_x=0.1,
             # panel_spacing_y=0.5,
             panel_background=pn.element_blank(),
             panel_grid_major=pn.element_blank(),
@@ -618,7 +625,7 @@ def learning_curve_plot(N=1_000_000):
 
 
 ### Learning curve validation plots
-plot_learn_gist = learning_curve_plot(100_000)
+plot_learn_gist = learning_curve_plot(1_000_000)
 
 ### Performance vs. step size and lower bound fraction plots
 # plot_lbf = uniform_interval_plot(num_seeds=500, num_draws=100)
