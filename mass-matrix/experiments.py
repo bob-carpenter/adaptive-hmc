@@ -542,8 +542,24 @@ def theta_label_function(variable):
     label_dict = {"theta**2": r"$\widehat{\theta^2}$", "theta": r"$\widehat{\theta}$"}
     return label_dict.get(variable, variable)
 
+def funnel_plot(stepsize, N=100_000):
+    seed = 2747
+    model_bs = create_model('funnel')
+    D = model_bs.param_unc_num()
+    rng = np.random.default_rng(seed)
+    theta0 = np.zeros(D)
+    sampler = gwm.GistMassSampler(model_bs, stepsize, rng, theta0, np.eye(D), 100, 1e-6)
+    draws = sampler.sample_constrained(N)
+    print(f"ACCEPT RATE = {sampler.accept_rate():6.3f};  {stepsize = };  {sampler._num_steps=}")
+    return draws
 
-def learning_curve_plot(N=1_000_000):
+def summary(draws):
+    print(f"mean = {np.mean(draws, axis=0)}")
+    print(f"sd = {np.std(draws, axis=0)}")
+    print(f"min = {np.min(draws, axis=0)}")
+    print(f"max = {np.max(draws, axis=0)}")
+
+def learning_curve_plot(N=100_000):
     seed = 492011
     model_bs = create_model("very-corr-normal")
     D = model_bs.param_unc_num()
@@ -627,8 +643,23 @@ def learning_curve_plot(N=1_000_000):
 
 
 ### Learning curve validation plots
-plot_learn_gist = learning_curve_plot(20_000)
+# plot_learn_gist = learning_curve_plot(10_000)
 
+draws = funnel_plot(0.1, 10_000)
+summary(draws)
+import pandas as pd
+from plotnine import ggplot, aes, geom_line, theme_minimal, labs
+data = draws[:, 0]
+df = pd.DataFrame({
+    'm': np.arange(len(data)),
+    'double_log_sigma': data
+})
+plot = (
+    ggplot(df, aes(x='m', y='double_log_sigma'))
+    + geom_line()
+)
+plot.show()
+    
 ### Performance vs. step size and lower bound fraction plots
 # plot_lbf = uniform_interval_plot(num_seeds=500, num_draws=100)
 
