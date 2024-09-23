@@ -1,14 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
-from python import Fixed_step_size_NUTS_simulation as fv
+#from python import Fixed_step_size_NUTS_simulation as fv
 
 
-def plot_funnel_spectral_1D(N, log_sig_range, h):
+def plot_funnel_spectral_1D(N, log_sig_range, h, destination):
     # Get funnel model
 
     # funnel_model = fv.create_model_stan_and_json("funnel", "funnel")
     # Create gridpoints and initial theta
+
+    if not os.path.exists(destination):
+        os.makedirs(destination)
+
     log_sigs = np.linspace(-log_sig_range, log_sig_range, N)
     #
     # theta_0 = np.zeros(funnel_model.param_unc_num())
@@ -41,15 +46,14 @@ def plot_funnel_spectral_1D(N, log_sig_range, h):
     x_point = -2 * np.log(2 / h)
 
     ax.axvline(x=x_point, color='gray', linestyle=':')
-    ax.text(x_point, 1.0, '$\log(\sigma)$' + f' = {x_point:.2f}', horizontalalignment='center', verticalalignment='top')
-    ax.set_xlabel('$\log(\sigma)$')
+    ax.text(x_point, 1.0, '$\omega$' + f' = {x_point:.2f}', horizontalalignment='center', verticalalignment='top')
+    ax.set_xlabel('$\omega$')
     # ax.set_ylabel('$1/\sqrt{ \\rho(H)}$')
     ax.plot(log_sigs, one_over_sqrt_L, label="$1/\sqrt{ \\rho(D^2 U)}$")
     ax.axhline(y=h / 2, color='r', linestyle='--', label="$h*\sqrt{\\rho(D^2 U)} = 2$")
     ax.legend()
     # ax.title.set_text(f'Predicted Bottleneck in $\log(\sigma)$ for h = {h}')
-    plt.savefig(
-        f'/Users/milostevenmarsden/Documents/Simulations/June2024/Exact_Spectral_Radius_Cutoff/funnel_spectral_cutoff_{N}_{log_sig_range}_{h}.png')
+    plt.savefig(f"{destination}/funnel_spectral_cutoff_{N}_{log_sig_range}_{h}.png")
     plt.show()
     # Create Plots
 
@@ -85,13 +89,13 @@ def plot_funnel_trace_1D(N, log_sig_range, h):
     ax.plot(intersection_points, intersection_h / 2, 'go')
     x_point = intersection_points[0]
     ax.axvline(x=x_point, color='gray', linestyle=':')
-    ax.text(x_point, 1.0, f'$\log(\sigma)$ = {x_point:.2f}', horizontalalignment='center', verticalalignment='top')
+    ax.text(x_point, 1.0, f'$\omega$ = {x_point:.2f}', horizontalalignment='center', verticalalignment='top')
 
     ax.plot(log_sigs, one_over_sqrt_L, label="1/sqrt(L)")
     ax.set_ylabel('$1/\sqrt{Tr(H^2)/dim}$')
-    ax.set_xlabel('$\log(\sigma)$')
+    ax.set_xlabel('$\omega$')
     ax.axhline(y=h, color='r', linestyle='--')
-    ax.title.set_text(f'Predicted Bottleneck in $\log(\sigma)$ for h = {h}')
+    ax.title.set_text(f'Predicted Bottleneck in $\omega$ for h = {h}')
     plt.savefig(
         f'/Users/milostevenmarsden/Documents/Simulations/June2024/Trace_Cutoff/funnel_spectral_cutoff_{N}_{log_sig_range}_{h}.png')
     plt.show()
@@ -99,6 +103,7 @@ def plot_funnel_trace_1D(N, log_sig_range, h):
 
 
 if __name__ == "__main__":
+    destination = '/Users/milostevenmarsden/Documents/Simulations/August2024/Exact_Spectral_Radius_Cutoff'
     for h in [1 / 32, 1 / 16, 1 / 8, 1 / 4]:
         # plot_funnel_trace_1D(1000, 9, h)
-        plot_funnel_spectral_1D(1000, 9, h)
+        plot_funnel_spectral_1D(1000, 9, h,destination )
